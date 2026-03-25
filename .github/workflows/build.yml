@@ -1,0 +1,47 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'          # 仅在推送 v* 标签时触发（如 v1.0.0）
+  workflow_dispatch:   # 允许手动触发
+
+permissions:
+  contents: write      # 创建 Release 需要写权限
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build EXE
+        run: pyinstaller build.spec --noconfirm
+
+      - name: Archive build
+        run: Compress-Archive -Path dist\ImageCompression\* -DestinationPath ImageCompression-windows-x64.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImageCompression-windows-x64
+          path: ImageCompression-windows-x64.zip
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ImageCompression-windows-x64.zip
+          generate_release_notes: true
