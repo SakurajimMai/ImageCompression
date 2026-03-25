@@ -2,12 +2,11 @@ name: Build & Release
 
 on:
   push:
-    tags:
-      - 'v*'          # 仅在推送 v* 标签时触发（如 v1.0.0）
-  workflow_dispatch:   # 允许手动触发
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
-  contents: write      # 创建 Release 需要写权限
+  contents: write
 
 jobs:
   build-windows:
@@ -39,9 +38,18 @@ jobs:
           name: ImageCompression-windows-x64
           path: ImageCompression-windows-x64.zip
 
+      - name: Get short SHA
+        id: sha
+        run: echo "short=$(git rev-parse --short HEAD)" >> $env:GITHUB_OUTPUT
+
       - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: build-${{ steps.sha.outputs.short }}
+          name: Build ${{ steps.sha.outputs.short }}
+          body: |
+            自动构建 - ${{ github.event.head_commit.message }}
+
+            提交: ${{ github.sha }}
           files: ImageCompression-windows-x64.zip
-          generate_release_notes: true
+          make_latest: true
