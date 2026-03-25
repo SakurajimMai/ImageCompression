@@ -10,6 +10,7 @@ dist/
 *.egg-info/
 *.egg
 *.spec
+!build.spec
 
 # Virtual Environment
 .venv/
