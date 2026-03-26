@@ -223,6 +223,19 @@ class UploadTab(QWidget):
         proxy_addr.addWidget(QLabel(":"))
         proxy_addr.addWidget(self.proxy_port, 1)
         pg.addLayout(proxy_addr)
+
+        proxy_auth = QHBoxLayout()
+        proxy_auth.setSpacing(4)
+        self.proxy_user = QLineEdit()
+        self.proxy_user.setPlaceholderText("用户名（可选）")
+        self.proxy_user.setEnabled(False)
+        self.proxy_pass = QLineEdit()
+        self.proxy_pass.setPlaceholderText("密码（可选）")
+        self.proxy_pass.setEchoMode(QLineEdit.EchoMode.Password)
+        self.proxy_pass.setEnabled(False)
+        proxy_auth.addWidget(self.proxy_user, 1)
+        proxy_auth.addWidget(self.proxy_pass, 1)
+        pg.addLayout(proxy_auth)
         layout.addLayout(create_card_group("代理设置", pg))
 
         # ── 操作按钮 ──
@@ -250,6 +263,8 @@ class UploadTab(QWidget):
         self.proxy_type_combo.setEnabled(checked)
         self.proxy_host.setEnabled(checked)
         self.proxy_port.setEnabled(checked)
+        self.proxy_user.setEnabled(checked)
+        self.proxy_pass.setEnabled(checked)
 
     def _get_proxy_url(self) -> str | None:
         if not self.chk_proxy.isChecked():
@@ -257,9 +272,15 @@ class UploadTab(QWidget):
         ptype = self.proxy_type_combo.currentText().lower()
         host = self.proxy_host.text().strip() or "127.0.0.1"
         port = self.proxy_port.value()
-        if ptype == "socks5":
-            return f"socks5://{host}:{port}"
-        return f"http://{host}:{port}"
+        user = self.proxy_user.text().strip()
+        passwd = self.proxy_pass.text()
+        scheme = "socks5" if ptype == "socks5" else "http"
+        if user:
+            from urllib.parse import quote
+            user_enc = quote(user, safe="")
+            pass_enc = quote(passwd, safe="") if passwd else ""
+            return f"{scheme}://{user_enc}:{pass_enc}@{host}:{port}"
+        return f"{scheme}://{host}:{port}"
 
     def _create_uploader(self):
         protocol = self.protocol_combo.currentText()
