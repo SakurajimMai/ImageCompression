@@ -18,7 +18,7 @@ a = Analysis(
     ['src/main.py'],
     pathex=['src'],
     binaries=[],
-    datas=[],
+    datas=[('src/assets', 'assets')],
     hiddenimports=[
         # PySide6 核心
         'PySide6.QtCore',
@@ -82,6 +82,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='src/assets/icon.ico',
 )
 
 coll = COLLECT(

@@ -43,6 +43,12 @@ class MainWindow(QMainWindow):
         self.resize(920, 740)
         self.setAcceptDrops(True)
 
+        # 设置窗口图标
+        import os
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../assets/icon.png")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+
         # 应用语言和主题
         set_language(self.config.language)
         self.setStyleSheet(get_stylesheet(self.config.theme))

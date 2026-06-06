@@ -1,7 +1,8 @@
 """
 Helper for modern borderless "Label + Card" UI layout.
 """
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QGraphicsDropShadowEffect
+from PySide6.QtGui import QColor
 
 def create_card_group(title_text: str, content_layout: QVBoxLayout, spacing: int = 8) -> QVBoxLayout:
     """
@@ -21,6 +22,14 @@ def create_card_group(title_text: str, content_layout: QVBoxLayout, spacing: int
     # 卡片容器
     card = QWidget()
     card.setObjectName("card")  # 供 QSS 定位
+
+    # 悬浮阴影效果
+    shadow = QGraphicsDropShadowEffect(card)
+    shadow.setBlurRadius(16)
+    shadow.setColor(QColor(0, 0, 0, 20))  # 柔和轻质阴影
+    shadow.setXOffset(0)
+    shadow.setYOffset(4)
+    card.setGraphicsEffect(shadow)
     
     # 为内容 layout 增加内部边距
     content_layout.setContentsMargins(16, 16, 16, 16)
