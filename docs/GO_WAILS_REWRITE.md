@@ -22,12 +22,13 @@
 ## 验证命令
 
 ```powershell
-go test ./...
+Push-Location frontend
+npm run build
+Pop-Location
 ```
 
 ```powershell
-cd frontend
-npm run build
+go test ./...
 ```
 
 ```powershell

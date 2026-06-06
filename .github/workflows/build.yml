@@ -34,11 +34,19 @@ jobs:
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.2
 
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend assets
+        working-directory: frontend
+        run: npm run build
+
       - name: Test Go core
         run: go test ./...
 
       - name: Build Wails EXE
-        run: wails build
+        run: wails build -s
 
       - name: Archive build
         run: Compress-Archive -Path build\bin\ImageCompression.exe -DestinationPath ImageCompression-windows-x64.zip

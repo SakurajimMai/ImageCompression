@@ -27,13 +27,14 @@ JPEG encoding is handled by the Go standard library.
 ## Commands
 
 ```powershell
-go test ./...
+Push-Location frontend
+npm install
+npm run build
+Pop-Location
 ```
 
 ```powershell
-cd frontend
-npm install
-npm run build
+go test ./...
 ```
 
 ```powershell

@@ -27,13 +27,14 @@ JPEG 压缩由 Go 标准库直接完成，不依赖外部编码器。
 ## 开发命令
 
 ```powershell
-go test ./...
+Push-Location frontend
+npm install
+npm run build
+Pop-Location
 ```
 
 ```powershell
-cd frontend
-npm install
-npm run build
+go test ./...
 ```
 
 ```powershell
