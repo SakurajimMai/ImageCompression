@@ -18,22 +18,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          python-version: '3.13'
-          cache: 'pip'
+          go-version: '1.23'
+          cache-dependency-path: go.sum
 
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install pyinstaller
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
 
-      - name: Build EXE
-        run: pyinstaller build.spec --noconfirm
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.2
+
+      - name: Test Go core
+        run: go test ./...
+
+      - name: Build Wails EXE
+        run: wails build
 
       - name: Archive build
-        run: Compress-Archive -Path dist\ImageCompression\* -DestinationPath ImageCompression-windows-x64.zip
+        run: Compress-Archive -Path build\bin\ImageCompression.exe -DestinationPath ImageCompression-windows-x64.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

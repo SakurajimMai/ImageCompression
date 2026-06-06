@@ -1,21 +1,21 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
+# Go
+*.test
+coverage.out
 
-# Distribution / Packaging
+# Node / Vite
+frontend/node_modules/
+frontend/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Wails / distribution
 build/
 dist/
-*.egg-info/
-*.egg
-*.spec
-!build.spec
+windows-artifacts/
 
-# Virtual Environment
-.venv/
-venv/
-env/
+# Runtime config
+config.json
 
 # IDE
 .idea/
@@ -23,17 +23,6 @@ env/
 *.swp
 *.swo
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
 # OS
 .DS_Store
 Thumbs.db
-
-# Project-specific — binary artifacts
-windows-artifacts/
-
-# Runtime config (user-local, not in repo dir but just in case)
-config.json
