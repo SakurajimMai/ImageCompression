@@ -1,5 +1,9 @@
 declare global {
   interface Window {
+    runtime?: {
+      EventsOn(eventName: string, callback: (...data: unknown[]) => void): () => void;
+      EventsOff(eventName: string, ...additionalEventNames: string[]): void;
+    };
     go?: {
       main?: {
         App?: {
@@ -63,6 +67,7 @@ export type AppConfig = {
   };
   upload: {
     protocol: string;
+    custom_path: string;
     s3: {
       endpoint: string;
       bucket: string;

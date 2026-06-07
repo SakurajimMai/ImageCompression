@@ -50,7 +50,36 @@ type BatchResult struct {
 	Errors          []string `json:"errors"`
 }
 
-type ProgressFunc func(current int, total int, message string)
+// ProgressEvent reports a single update from a batch compression run.
+//
+// Semantics mirror upload.ProgressEvent so the frontend can share handlers.
+//   - Start=true  : a new batch has begun, Total > 0
+//   - Done=true   : the batch is finished, totals are final
+//   - CurrentFile is the file currently being processed (or just finished
+//     when Start/Done are false)
+//   - Speed is files-per-second over the elapsed time so far
+//   - URL/Error/Original/Compressed describe the per-file outcome; they are
+//     mutually exclusive and only set between Start and Done.
+type ProgressEvent struct {
+	Current     int     `json:"current"`
+	Total       int     `json:"total"`
+	CurrentFile string  `json:"currentFile"`
+	Message     string  `json:"message"`
+	OutputPath  string  `json:"outputPath,omitempty"`
+	URL         string  `json:"url,omitempty"`
+	Error       string  `json:"error,omitempty"`
+	Start       bool    `json:"start,omitempty"`
+	Done        bool    `json:"done,omitempty"`
+	Compressed  int     `json:"compressed"`
+	Skipped     int     `json:"skipped"`
+	Failed      int     `json:"failed"`
+	Original    int64   `json:"original"`
+	Compressed_ int64   `json:"compressedSize"`
+	Speed       float64 `json:"speed"`
+	ElapsedSec  float64 `json:"elapsedSec"`
+}
+
+type ProgressFunc func(event ProgressEvent)
 
 func CompressDirectory(ctx context.Context, options BatchOptions, runner Runner, progress ProgressFunc) (BatchResult, error) {
 	start := time.Now()
@@ -64,6 +93,42 @@ func CompressDirectory(ctx context.Context, options BatchOptions, runner Runner,
 		OutputDir:  options.OutputDir,
 		Results:    []Result{},
 		Errors:     []string{},
+	}
+
+	emitProgress := func(current int, currentFile string, msg string, item Result) {
+		if progress == nil {
+			return
+		}
+		elapsed := time.Since(start).Seconds()
+		var speed float64
+		if elapsed > 0 {
+			speed = float64(result.CompressedFiles+result.SkippedFiles+result.FailedFiles) / elapsed
+		}
+		progress(ProgressEvent{
+			Current:      current,
+			Total:        len(files),
+			CurrentFile:  currentFile,
+			Message:      msg,
+			OutputPath:   item.OutputPath,
+			Error:        item.Error,
+			Compressed:   result.CompressedFiles,
+			Skipped:      result.SkippedFiles,
+			Failed:       result.FailedFiles,
+			Original:     result.OriginalSize,
+			Compressed_:  result.CompressedSize,
+			Speed:        speed,
+			ElapsedSec:   elapsed,
+		})
+	}
+
+	if progress != nil {
+		progress(ProgressEvent{
+			Start:    true,
+			Total:    len(files),
+			Message:  fmt.Sprintf("准备压缩 %d 个文件", len(files)),
+			Speed:    0,
+			ElapsedSec: 0,
+		})
 	}
 
 	processOneFile := func(index int, inputPath string) Result {
@@ -85,9 +150,7 @@ func CompressDirectory(ctx context.Context, options BatchOptions, runner Runner,
 				}
 			}
 		}
-		if progress != nil {
-			progress(index+1, len(files), fmt.Sprintf("压缩: %s", filepath.Base(inputPath)))
-		}
+		emitProgress(index+1, filepath.Base(inputPath), fmt.Sprintf("压缩: %s", filepath.Base(inputPath)), Result{})
 		item, err := compressOne(ctx, inputPath, outputPath, options, runner)
 		if err != nil && item.Error == "" {
 			item.Error = err.Error()
@@ -95,24 +158,24 @@ func CompressDirectory(ctx context.Context, options BatchOptions, runner Runner,
 		return item
 	}
 
-	addResult := func(inputPath string, item Result) {
+	addResult := func(inputPath string, item Result, index int) {
 		result.Results = append(result.Results, item)
 		result.OriginalSize += item.OriginalSize
 		result.CompressedSize += item.CompressedSize
 		if item.Error == "skipped" {
 			result.SkippedFiles++
-			return
-		}
-		if !item.Success {
+		} else if !item.Success {
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", inputPath, item.Error))
-			return
+		} else {
+			result.CompressedFiles++
 		}
-		result.CompressedFiles++
+		emitProgress(index+1, filepath.Base(inputPath), fmt.Sprintf("完成: %s", filepath.Base(inputPath)), item)
 	}
 
 	if options.MaxWorkers <= 1 || options.Format == "avif" {
 		for index, inputPath := range files {
-			addResult(inputPath, processOneFile(index, inputPath))
+			item := processOneFile(index, inputPath)
+			addResult(inputPath, item, index)
 		}
 	} else {
 		var mutex sync.Mutex
@@ -126,7 +189,7 @@ func CompressDirectory(ctx context.Context, options BatchOptions, runner Runner,
 					inputPath := files[index]
 					item := processOneFile(index, inputPath)
 					mutex.Lock()
-					addResult(inputPath, item)
+					addResult(inputPath, item, index)
 					mutex.Unlock()
 				}
 			}()
@@ -140,6 +203,26 @@ func CompressDirectory(ctx context.Context, options BatchOptions, runner Runner,
 
 	result.FailedFiles = len(result.Errors)
 	result.ElapsedSeconds = time.Since(start).Seconds()
+	if progress != nil {
+		elapsed := result.ElapsedSeconds
+		var speed float64
+		if elapsed > 0 {
+			speed = float64(result.CompressedFiles+result.SkippedFiles+result.FailedFiles) / elapsed
+		}
+		progress(ProgressEvent{
+			Done:        true,
+			Current:     len(files),
+			Total:       len(files),
+			Message:     fmt.Sprintf("压缩完成：%d 成功 / %d 跳过 / %d 失败", result.CompressedFiles, result.SkippedFiles, result.FailedFiles),
+			Compressed:  result.CompressedFiles,
+			Skipped:     result.SkippedFiles,
+			Failed:      result.FailedFiles,
+			Original:    result.OriginalSize,
+			Compressed_: result.CompressedSize,
+			Speed:       speed,
+			ElapsedSec:  elapsed,
+		})
+	}
 	return result, nil
 }
 

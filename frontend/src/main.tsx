@@ -1,8 +1,9 @@
-import React, { Component, useEffect, useMemo, useState } from 'react';
+import React, { Component, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Archive,
   CloudUpload,
+  Copy,
   FileSearch,
   Gauge,
   HelpCircle,
@@ -73,6 +74,7 @@ const fallbackConfig: AppConfig = {
   },
   upload: {
     protocol: 's3',
+    custom_path: '',
     s3: {
       endpoint: '',
       bucket: '',
@@ -116,6 +118,14 @@ function backend() {
   return window.go?.main?.App;
 }
 
+function runtimeEventsOn(eventName: string, callback: (...data: unknown[]) => void) {
+  return window.runtime?.EventsOn?.(eventName, callback) ?? (() => {});
+}
+
+function runtimeEventsOff(eventName: string) {
+  window.runtime?.EventsOff?.(eventName);
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('prepare');
   const [config, setConfig] = useState<AppConfig>(fallbackConfig);
@@ -131,6 +141,12 @@ function App() {
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [uploadRootDir, setUploadRootDir] = useState('');
   const [status, setStatus] = useState('Go/Wails 版本已作为当前主版本运行。');
+  const configReady = useRef(false);
+  const uploadCancelRef = useRef<(() => void) | null>(null);
+  const compressCancelRef = useRef<(() => void) | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [compressProgress, setCompressProgress] = useState<CompressProgressEvent | null>(null);
 
   useEffect(() => {
     const api = backend();
@@ -143,8 +159,67 @@ function App() {
         setConfig(loaded);
         setInputDir(loaded.last_input_dir ?? '');
         setOutputDir(loaded.last_output_dir ?? '');
+        // Allow the auto-save effect to take over after the first load.
+        queueMicrotask(() => {
+          configReady.current = true;
+        });
       })
-      .catch((error) => setStatus(`配置加载失败：${String(error)}`));
+      .catch((error) => {
+        setStatus(`配置加载失败：${String(error)}`);
+        configReady.current = true;
+      });
+  }, []);
+
+  // Auto-persist any change to config / input dir / output dir so that
+  // closing the app (without going to the Settings tab) does not lose state.
+  useEffect(() => {
+    if (!configReady.current) {
+      return;
+    }
+    const api = backend();
+    if (!api) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      const nextConfig = {
+        ...config,
+        last_input_dir: inputDir,
+        last_output_dir: outputDir,
+      };
+      api
+        .SaveConfig(nextConfig)
+        .catch((error) => setStatus(`自动保存失败：${String(error)}`));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [config, inputDir, outputDir]);
+
+  // Drop any pending upload event subscription when the component unmounts.
+  useEffect(() => {
+    return () => {
+      if (uploadCancelRef.current) {
+        uploadCancelRef.current();
+        uploadCancelRef.current = null;
+      }
+    };
+  }, []);
+
+  // Subscribe to compress progress events from the Go backend.
+  useEffect(() => {
+    const off = runtimeEventsOn('compress', (raw) => {
+      if (typeof raw !== 'string') return;
+      const event = parseCompressEvent(raw);
+      if (!event) return;
+      setCompressProgress(event);
+      if (event.done) {
+        setIsCompressing(false);
+      } else if (event.start) {
+        setIsCompressing(true);
+      }
+    });
+    return () => {
+      off();
+      runtimeEventsOff('compress');
+    };
   }, []);
 
   const stats = useMemo(() => {
@@ -443,6 +518,21 @@ function App() {
       return;
     }
     try {
+      setIsCompressing(true);
+      setCompressProgress({
+        current: 0,
+        total: 0,
+        currentFile: '',
+        message: '准备压缩...',
+        compressed: 0,
+        skipped: 0,
+        failed: 0,
+        original: 0,
+        compressedSize: 0,
+        speed: 0,
+        elapsedSec: 0,
+        start: true,
+      });
       const result = await api.CompressDirectory({
         InputDir: inputDir,
         OutputDir: outputDir || `${inputDir}_compressed`,
@@ -461,10 +551,23 @@ function App() {
       setInputDir(normalized.outputDir);
       setOutputDir('');
       setUploadRootDir(uploadRootDir || inputDir);
+      setIsCompressing(false);
       setStatus(`批量压缩完成：${result.compressedFiles}/${result.totalFiles} 个文件成功。`);
     } catch (error) {
+      setIsCompressing(false);
       setStatus(`批量压缩失败：${String(error)}`);
     }
+  }
+
+  function clearCompress() {
+    setCompressResult(null);
+    setPreviewItems([]);
+    setPreviewImages(null);
+    setCompressProgress(null);
+  }
+
+  function clearUpload() {
+    setUploadResult(null);
   }
 
   async function openPreviewItem(item: PreviewItem) {
@@ -507,25 +610,92 @@ function App() {
       setStatus('浏览器预览模式：已生成示例上传结果。');
       return;
     }
+    // Tear down any previous subscription before starting a new upload so
+    // overlapping events from a stale run cannot pollute the new result.
+    if (uploadCancelRef.current) {
+      uploadCancelRef.current();
+      uploadCancelRef.current = null;
+    }
+    setIsUploading(true);
+    setUploadResult({ totalFiles: 0, uploadedFiles: 0, failedFiles: 0, urls: [], errors: [] });
+    setStatus('正在准备上传...');
+
+    let lastStart = 0;
+    const offStart = runtimeEventsOn('upload', (raw) => {
+      if (typeof raw !== 'string') return;
+      const event = parseUploadEvent(raw);
+      if (!event) return;
+      if (event.start) {
+        lastStart = event.total;
+        setUploadResult({
+          totalFiles: event.total,
+          uploadedFiles: 0,
+          failedFiles: 0,
+          urls: [],
+          errors: [],
+        });
+        setStatus(`开始上传 ${event.total} 个文件`);
+      } else if (event.done) {
+        setUploadResult((prev) => ({
+          totalFiles: event.total || prev?.totalFiles || 0,
+          uploadedFiles: event.uploaded,
+          failedFiles: event.failed,
+          urls: prev?.urls ?? [],
+          errors: prev?.errors ?? [],
+        }));
+        if (event.error) {
+          setStatus(`上传中断：${event.error}`);
+        } else {
+          setStatus(`上传完成：${event.uploaded} 成功 / ${event.failed} 失败（总计 ${event.total}）`);
+        }
+        setIsUploading(false);
+      } else {
+        setUploadResult((prev) => {
+          const urls = prev?.urls ?? [];
+          const errors = prev?.errors ?? [];
+          return {
+            totalFiles: event.total || prev?.totalFiles || lastStart,
+            uploadedFiles: event.uploaded,
+            failedFiles: event.failed,
+            urls: event.url ? [...urls, event.url] : urls,
+            errors: event.error ? [...errors, `${event.message}: ${event.error}`] : errors,
+          };
+        });
+        setStatus(`${event.current}/${event.total || lastStart}  ${event.message}`);
+      }
+    });
+    uploadCancelRef.current = () => {
+      offStart();
+      runtimeEventsOff('upload');
+    };
+
     try {
       const result = await api.UploadDirectoryWithRoot(inputDir, recursive, config.upload, uploadRootDir || inputDir);
-      setUploadResult(normalizeUploadResult(result));
-      setStatus(`上传完成：${result.uploadedFiles}/${result.totalFiles} 个文件成功。`);
+      // Streamed events already updated the result; final reconcile covers
+      // the case where the backend short-circuited without any per-file events.
+      setUploadResult((prev) => ({
+        totalFiles: result.totalFiles || prev?.totalFiles || 0,
+        uploadedFiles: result.uploadedFiles,
+        failedFiles: result.failedFiles,
+        urls: result.urls.length ? result.urls : prev?.urls ?? [],
+        errors: result.errors.length ? result.errors : prev?.errors ?? [],
+      }));
     } catch (error) {
       setStatus(`上传执行失败：${String(error)}`);
+      setIsUploading(false);
     }
   }
 
   async function saveSettings() {
+    // 配置已在 useEffect 中自动持久化，这里只做一次"立即落盘"并提示用户。
     const api = backend();
     const nextConfig = {
       ...config,
       last_input_dir: inputDir,
       last_output_dir: outputDir,
     };
-    setConfig(nextConfig);
     if (!api) {
-      setStatus('浏览器预览模式：设置已保存在页面状态。');
+      setStatus('浏览器预览模式：未连接 Wails 后端，无法写入配置文件。');
       return;
     }
     try {
@@ -606,10 +776,13 @@ function App() {
             compressResult={compressResult}
             previewItems={previewItems}
             previewImages={previewImages}
+            isCompressing={isCompressing}
+            compressProgress={compressProgress}
             onPreviewCommand={previewCommand}
             onCompressFirstImage={compressFirstImage}
             onCompressDirectory={executeCompressDirectory}
             onOpenPreviewItem={openPreviewItem}
+            onClear={clearCompress}
           />
         )}
         {activeTab === 'upload' && (
@@ -621,7 +794,9 @@ function App() {
             recursive={recursive}
             setRecursive={setRecursive}
             uploadResult={uploadResult}
+            isUploading={isUploading}
             onUpload={executeUpload}
+            onClear={clearUpload}
           />
         )}
         {activeTab === 'settings' && (
@@ -748,10 +923,13 @@ function CompressView(props: {
   compressResult: CompressBatchResult | null;
   previewItems: PreviewItem[];
   previewImages: PreviewImages;
+  isCompressing: boolean;
+  compressProgress: CompressProgressEvent | null;
   onPreviewCommand: () => void;
   onCompressFirstImage: () => void;
   onCompressDirectory: () => void;
   onOpenPreviewItem: (item: PreviewItem) => void;
+  onClear: () => void;
 }) {
   const compress = props.config.compress;
   const avif = compress.avif;
@@ -774,11 +952,14 @@ function CompressView(props: {
         </div>
         <Checkbox label="递归压缩子目录" checked={props.recursive} onChange={props.setRecursive} />
         <div className="button-row">
-          <button onClick={props.onCompressDirectory}>
+          <button onClick={props.onCompressDirectory} disabled={props.isCompressing}>
             <Archive size={16} />
-            压缩目录
+            {props.isCompressing ? '压缩中…' : '压缩目录'}
           </button>
         </div>
+      </section>
+      <section className="panel wide">
+        <CompressProgressPanel progress={props.compressProgress} isCompressing={props.isCompressing} />
       </section>
       <section className="panel">
         <h2>格式</h2>
@@ -909,6 +1090,7 @@ function CompressView(props: {
           previewItems={props.previewItems}
           previewImages={props.previewImages}
           onOpenPreviewItem={props.onOpenPreviewItem}
+          onClear={props.onClear}
         />
       </section>
     </div>
@@ -923,7 +1105,9 @@ function UploadView(props: {
   recursive: boolean;
   setRecursive: (value: boolean) => void;
   uploadResult: UploadResult | null;
+  isUploading: boolean;
   onUpload: () => void;
+  onClear: () => void;
 }) {
   const upload = props.config.upload;
   const setUpload = (value: AppConfig['upload']) => props.setConfig({ ...props.config, upload: value });
@@ -942,11 +1126,18 @@ function UploadView(props: {
       <section className="panel wide">
         <h2>上传目录</h2>
         <Field label="输入目录" value={props.inputDir} onChange={props.setInputDir} placeholder="D:/photos/output" />
+        <Field
+          label="自定义远程子路径"
+          value={upload.custom_path}
+          onChange={(value) => setUpload({ ...upload, custom_path: value })}
+          placeholder="例如 photos/2026/spring"
+        />
+        <p className="hint">留空时使用源目录名作为子路径；填写后会拼接到协议根路径（如 S3 Prefix / FTP RemoteDir）后面。</p>
         <Checkbox label="递归上传子目录" checked={props.recursive} onChange={props.setRecursive} />
         <div className="button-row">
-          <button onClick={props.onUpload}>
+          <button onClick={props.onUpload} disabled={props.isUploading}>
             <CloudUpload size={16} />
-            开始上传
+            {props.isUploading ? '上传中…' : '开始上传'}
           </button>
         </div>
       </section>
@@ -1008,7 +1199,7 @@ function UploadView(props: {
       )}
       <section className="panel wide">
         <h2>上传结果</h2>
-        <UploadResultPanel result={props.uploadResult} />
+        <UploadResultPanel result={props.uploadResult} isUploading={props.isUploading} onClear={props.onClear} />
       </section>
     </div>
   );
@@ -1087,11 +1278,109 @@ function SettingsView(props: {
 
 function HelpView() {
   return (
-    <section className="panel prose">
-      <h2>说明</h2>
-      <p>当前项目只保留 Go/Wails 桌面版本，核心流程通过 Go 后端执行，界面由 React/Vite 渲染。</p>
-      <p>已接入配置加载、目录扫描、准备执行、AVIF/WebP/JPEG 压缩、图片预览和 S3/FTP/SFTP 上传。</p>
-    </section>
+    <div className="content-grid">
+      <section className="panel wide prose">
+        <h2>应用概览</h2>
+        <p>
+          <strong>Image Compression</strong> 是一个基于 Go/Wails 的桌面图像处理工作台，把"扫描 → 整理 → 压缩 → 上传"四条独立步骤串成一条流水线。
+          所有重活都由 Go 后端执行（目录遍历、avifenc/cwebp 调用、S3/FTP/SFTP 协议），前端只负责参数表单与结果展示。
+        </p>
+        <p>
+          应用默认数据目录：<code>~/.imagecompression/config.json</code>，所有参数都会持久化到这里，下次启动自动加载。
+        </p>
+      </section>
+
+      <section className="panel">
+        <h2>准备</h2>
+        <p>
+          入口页。指定输入目录与（可选）输出目录，扫描后展示图片 / 视频 / 其他分类以及总体积。
+          可一键重命名、清除 EXIF、生成新的整理目录，或直接进入压缩 / 上传流程。
+        </p>
+      </section>
+
+      <section className="panel">
+        <h2>压缩</h2>
+        <p>
+          选择输出格式（AVIF / WebP / JPEG），调整质量、速度、YUV、位深、缩放与并行数等参数。
+          支持命令预览、单图试压、整目录批处理，以及原始 vs 压缩后的对比预览。
+        </p>
+      </section>
+
+      <section className="panel">
+        <h2>上传</h2>
+        <p>
+          三种协议：S3（兼容 MinIO / R2 / 阿里 OSS 等）、FTP、SFTP。
+          每个协议都支持代理（SOCKS5 / HTTP CONNECT）、远程目录、公开域名。
+          留空时默认使用源目录名作为子路径。
+        </p>
+      </section>
+
+      <section className="panel">
+        <h2>设置</h2>
+        <p>
+          配置 avifenc 可执行文件目录、上传代理（SOCKS5 / HTTP）、主题外观等。
+          点击"保存设置"将数据写回 <code>~/.imagecompression/config.json</code>。
+        </p>
+      </section>
+
+      <section className="panel wide prose">
+        <h2>典型工作流</h2>
+        <ol>
+          <li>
+            <strong>扫描</strong>：在"准备"页填入源目录（如
+            <code>D:/photos/raw</code>），点击"扫描目录"，得到图片 / 视频列表与总体积。
+          </li>
+          <li>
+            <strong>整理</strong>：选择是否重命名 / 清除 EXIF，生成 <code>*_prepared</code> 整理目录（不会修改原文件）。
+          </li>
+          <li>
+            <strong>压缩</strong>：切到"压缩"页，确认输入目录为整理目录、输出目录为 <code>*_compressed</code>，选择 AVIF / WebP / JPEG 与参数。
+            点击"压缩目录"批量处理，结果区可对比预览。
+          </li>
+          <li>
+            <strong>上传</strong>：切到"上传"页，确认输入目录为压缩输出目录，填写协议参数后点击"开始上传"。
+            也可在"准备"页直接使用"准备压缩上传"按钮一键走完全流程。
+          </li>
+        </ol>
+      </section>
+
+      <section className="panel wide prose">
+        <h2>自定义上传路径</h2>
+        <p>
+          默认情况下，应用会把源目录的文件夹名作为远程子路径。例如源目录
+          <code>album-2026</code> 会自动以 <code>album-2026/</code> 作为子路径。
+        </p>
+        <p>
+          如果你希望上传到自定义路径（例如 <code>photos/2026/spring</code>），可以在"上传"页中的
+          <strong>自定义远程子路径</strong> 字段直接填写，填写后优先级高于源目录名。
+          留空时仍然沿用源目录名。
+        </p>
+        <p>
+          该路径会拼接到所选协议的根路径后面：S3 的 <code>Prefix</code>、FTP/SFTP 的
+          <code>RemoteDir</code> 都会自动附加这段子路径，方便你保持一个稳定的根目录结构。
+        </p>
+      </section>
+
+      <section className="panel wide prose">
+        <h2>常见问题</h2>
+        <ul>
+          <li>
+            <strong>avifenc 找不到？</strong>在"设置"页填写 avifenc 所在目录（包含
+            <code>avifenc.exe</code> 的文件夹），或在系统 PATH 中加入 avifenc 可执行文件路径。
+          </li>
+          <li>
+            <strong>上传失败？</strong>先确认协议、主机、端口、凭据是否正确；启用代理时请检查代理主机与端口。
+          </li>
+          <li>
+            <strong>压缩后体积没有变小？</strong>可能是源文件本身已经被高度压缩（如 JPEG 90+），可尝试调高
+            <code>max_quality</code>、或切换到 AVIF。
+          </li>
+          <li>
+            <strong>如何清空配置？</strong>删除 <code>~/.imagecompression/config.json</code> 即可恢复默认。
+          </li>
+        </ul>
+      </section>
+    </div>
   );
 }
 
@@ -1165,11 +1454,37 @@ function OperationList(props: { operations: PrepareOperation[] }) {
   );
 }
 
-function UploadResultPanel(props: { result: UploadResult | null }) {
+function UploadResultPanel(props: { result: UploadResult | null; isUploading: boolean; onClear: () => void }) {
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   if (!props.result) {
     return <div className="empty-state">填写目录与连接参数后开始上传。</div>;
   }
   const result = normalizeUploadResult(props.result);
+  const progress = result.totalFiles > 0 ? Math.min(100, Math.round((result.uploadedFiles / result.totalFiles) * 100)) : 0;
+
+  async function copyAllUrls() {
+    if (!result.urls.length) return;
+    const text = result.urls.join('\n');
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopyState('copied');
+      setTimeout(() => setCopyState('idle'), 1500);
+    } catch (error) {
+      setCopyState('failed');
+      setTimeout(() => setCopyState('idle'), 1500);
+    }
+  }
 
   return (
     <div className="result-stack">
@@ -1186,12 +1501,14 @@ function UploadResultPanel(props: { result: UploadResult | null }) {
           <span>失败</span>
           <strong>{result.failedFiles}</strong>
         </div>
+        <div className="metric">
+          <span>进度</span>
+          <strong>{progress}%</strong>
+        </div>
       </div>
-      {result.urls.length > 0 && (
-        <div className="result-list">
-          {result.urls.slice(0, 8).map((url) => (
-            <span key={url}>{url}</span>
-          ))}
+      {result.totalFiles > 0 && (
+        <div className="progress-track" aria-label="上传进度">
+          <div className="progress-bar" style={{ width: `${progress}%` }} />
         </div>
       )}
       {result.errors.length > 0 && (
@@ -1200,6 +1517,92 @@ function UploadResultPanel(props: { result: UploadResult | null }) {
             <span key={error}>{error}</span>
           ))}
         </div>
+      )}
+      <div className="url-output">
+        <div className="url-output-header">
+          <h3>URL 输出</h3>
+          <span className="url-output-count">{result.urls.length} 条</span>
+        </div>
+        <div className="url-output-list">
+          {result.urls.length === 0 ? (
+            <div className="empty-state">等待 URL 输出…</div>
+          ) : (
+            result.urls.map((url) => <span key={url} title={url}>{url}</span>)
+          )}
+        </div>
+        <div className="url-output-footer">
+          <button
+            className="ghost-button"
+            onClick={copyAllUrls}
+            disabled={!result.urls.length}
+            title="把全部链接按行复制到剪贴板"
+          >
+            <Copy size={16} />
+            {copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '全部复制'}
+          </button>
+          <button className="ghost-button" onClick={props.onClear} disabled={!result.urls.length && !result.errors.length}>
+            清空
+          </button>
+        </div>
+      </div>
+      {props.isUploading && (
+        <p className="hint">正在上传，新 URL 会持续追加在下方…</p>
+      )}
+    </div>
+  );
+}
+
+function CompressProgressPanel(props: { progress: CompressProgressEvent | null; isCompressing: boolean }) {
+  if (!props.progress || props.progress.total === 0) {
+    return <div className="empty-state">尚未开始压缩。</div>;
+  }
+  const progress = props.progress;
+  const percent = progress.total > 0 ? Math.min(100, Math.round((progress.current / progress.total) * 100)) : 0;
+  const speedText = progress.speed > 0 ? `${progress.speed.toFixed(1)} 张/秒` : '— 张/秒';
+  const elapsedText = progress.elapsedSec > 0 ? `${progress.elapsedSec.toFixed(1)} 秒` : '—';
+
+  return (
+    <div className="result-stack">
+      <div className="metric-grid">
+        <div className="metric">
+          <span>总文件</span>
+          <strong>{progress.total}</strong>
+        </div>
+        <div className="metric">
+          <span>已处理</span>
+          <strong>{progress.current}</strong>
+        </div>
+        <div className="metric">
+          <span>成功</span>
+          <strong>{progress.compressed}</strong>
+        </div>
+        <div className="metric">
+          <span>失败</span>
+          <strong>{progress.failed}</strong>
+        </div>
+      </div>
+      <div className="progress-track" aria-label="压缩进度">
+        <div className="progress-bar" style={{ width: `${percent}%` }} />
+      </div>
+      <div className="progress-meta">
+        <span>
+          压缩: <strong>{progress.currentFile || '—'}</strong>
+        </span>
+        <span>
+          速度: <strong>{speedText}</strong>
+        </span>
+        <span>
+          进度: <strong>{percent}%</strong>
+        </span>
+        <span>
+          用时: <strong>{elapsedText}</strong>
+        </span>
+      </div>
+      {progress.error && (
+        <p className="error-text">错误: {progress.error}</p>
+      )}
+      {!props.isCompressing && progress.done && (
+        <p className="hint">压缩已完成，可在下方查看结果与预览。</p>
       )}
     </div>
   );
@@ -1210,6 +1613,7 @@ function CompressResultPanel(props: {
   previewItems: PreviewItem[];
   previewImages: PreviewImages;
   onOpenPreviewItem: (item: PreviewItem) => void;
+  onClear: () => void;
 }) {
   if (!props.result) {
     return <div className="empty-state">选择格式和目录后开始批量压缩。</div>;
@@ -1222,6 +1626,13 @@ function CompressResultPanel(props: {
 
   return (
     <div className="result-stack">
+      <div className="result-header">
+        <h3>压缩结果</h3>
+        <div className="result-header-actions">
+          <span className="result-count">{result.compressedFiles}/{result.totalFiles} 成功</span>
+          <button className="ghost-button" onClick={props.onClear}>清空</button>
+        </div>
+      </div>
       <div className="metric-grid">
         <div className="metric">
           <span>总文件</span>
@@ -1232,6 +1643,10 @@ function CompressResultPanel(props: {
           <strong>{result.compressedFiles}</strong>
         </div>
         <div className="metric">
+          <span>跳过</span>
+          <strong>{result.skippedFiles}</strong>
+        </div>
+        <div className="metric">
           <span>失败</span>
           <strong>{result.failedFiles}</strong>
         </div>
@@ -1239,10 +1654,13 @@ function CompressResultPanel(props: {
           <span>节省</span>
           <strong>{ratio}</strong>
         </div>
+        <div className="metric">
+          <span>原始 → 压缩</span>
+          <strong>{`${formatSize(result.originalSize)} → ${formatSize(result.compressedSize)}`}</strong>
+        </div>
       </div>
       <div className="placeholder-list">
         <span>输出目录：{result.outputDir}</span>
-        <span>{`体积：${formatSize(result.originalSize)} -> ${formatSize(result.compressedSize)}`}</span>
       </div>
       {props.previewItems.length > 0 && (
         <div className="preview-list">
@@ -1292,7 +1710,7 @@ function tabTitle(tab: TabKey) {
     compress: '压缩参数',
     upload: '上传通道',
     settings: '应用设置',
-    help: '迁移说明',
+    help: '使用说明',
   }[tab];
 }
 
@@ -1386,6 +1804,68 @@ function normalizeUploadResult(result: Partial<UploadResult>): UploadResult {
     urls: result.urls ?? [],
     errors: result.errors ?? [],
   };
+}
+
+type UploadProgressEvent = {
+  current: number;
+  total: number;
+  message: string;
+  url?: string;
+  error?: string;
+  start?: boolean;
+  done?: boolean;
+  uploaded: number;
+  failed: number;
+  sourceDir: string;
+};
+
+function parseUploadEvent(raw: unknown): UploadProgressEvent | null {
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as UploadProgressEvent;
+    if (typeof parsed !== 'object' || parsed === null) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+type CompressProgressEvent = {
+  current: number;
+  total: number;
+  currentFile: string;
+  message: string;
+  outputPath?: string;
+  url?: string;
+  error?: string;
+  start?: boolean;
+  done?: boolean;
+  compressed: number;
+  skipped: number;
+  failed: number;
+  original: number;
+  compressedSize: number;
+  speed: number;
+  elapsedSec: number;
+};
+
+function parseCompressEvent(raw: unknown): CompressProgressEvent | null {
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as CompressProgressEvent;
+    if (typeof parsed !== 'object' || parsed === null) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 class ErrorBoundary extends Component<{ children: React.ReactNode }, { error: string | null }> {

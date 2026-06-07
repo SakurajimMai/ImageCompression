@@ -82,11 +82,12 @@ type CompressConfig struct {
 }
 
 type UploadConfig struct {
-	Protocol string      `json:"protocol"`
-	S3       S3Config    `json:"s3"`
-	FTP      FTPConfig   `json:"ftp"`
-	SFTP     SFTPConfig  `json:"sftp"`
-	Proxy    ProxyConfig `json:"proxy"`
+	Protocol   string      `json:"protocol"`
+	S3         S3Config    `json:"s3"`
+	FTP        FTPConfig   `json:"ftp"`
+	SFTP       SFTPConfig  `json:"sftp"`
+	Proxy      ProxyConfig `json:"proxy"`
+	CustomPath string      `json:"custom_path"`
 }
 
 type PrepareConfig struct {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"imagecompression/internal/prepare"
 	"imagecompression/internal/upload"
 	"imagecompression/internal/workflow"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type App struct {
@@ -74,7 +76,7 @@ func (a *App) CompressAVIF(inputPath string, outputPath string, params compress.
 func (a *App) CompressDirectory(options compress.BatchOptions) (compress.BatchResult, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, 30*time.Minute)
 	defer cancel()
-	return compress.CompressDirectory(ctx, options, nil, nil)
+	return compress.CompressDirectory(ctx, options, nil, a.compressProgress("compress"))
 }
 
 func (a *App) BuildPreviewItems(result compress.BatchResult, limit int) []compress.PreviewItem {
@@ -106,7 +108,7 @@ func (a *App) RunPrepareCompressUpload(options RunAllOptions) (workflow.Result, 
 			return prepare.ExecuteOperations(ops, overwrite, nil)
 		},
 		Compress: func(batchOptions compress.BatchOptions) (compress.BatchResult, error) {
-			return compress.CompressDirectory(ctx, batchOptions, nil, nil)
+			return compress.CompressDirectory(ctx, batchOptions, nil, a.compressProgress("compress"))
 		},
 		Upload: func(inputDir string) (upload.Result, error) {
 			rootDir := options.UploadRootDir
@@ -114,7 +116,7 @@ func (a *App) RunPrepareCompressUpload(options RunAllOptions) (workflow.Result, 
 				rootDir = inputDir
 			}
 			uploadConfig := withDefaultUploadRemotePath(options.UploadConfig, rootDir)
-			return upload.UploadDirectory(buildUploader(uploadConfig), inputDir, upload.Options{Recursive: options.UploadRecursive}, nil)
+			return upload.UploadDirectory(buildUploader(uploadConfig), inputDir, upload.Options{Recursive: options.UploadRecursive}, a.uploadProgress("upload"))
 		},
 	})
 }
@@ -128,7 +130,32 @@ func (a *App) UploadDirectoryWithRoot(inputDir string, recursive bool, cfg confi
 		remoteRootDir = inputDir
 	}
 	uploader := buildUploader(withDefaultUploadRemotePath(cfg, remoteRootDir))
-	return upload.UploadDirectory(uploader, inputDir, upload.Options{Recursive: recursive}, nil)
+	return upload.UploadDirectory(uploader, inputDir, upload.Options{Recursive: recursive}, a.uploadProgress("upload"))
+}
+
+// uploadProgress returns a progress callback that forwards each event to the
+// frontend over a Wails event channel. The eventName suffix lets callers
+// distinguish between independent uploads (e.g. "upload" for the user-driven
+// tab action and "workflow:upload" for the all-in-one pipeline).
+func (a *App) uploadProgress(eventName string) upload.ProgressFunc {
+	return func(event upload.ProgressEvent) {
+		payload, err := json.Marshal(event)
+		if err != nil {
+			return
+		}
+		wailsruntime.EventsEmit(a.ctx, eventName, string(payload))
+	}
+}
+
+// compressProgress mirrors uploadProgress for compression events.
+func (a *App) compressProgress(eventName string) compress.ProgressFunc {
+	return func(event compress.ProgressEvent) {
+		payload, err := json.Marshal(event)
+		if err != nil {
+			return
+		}
+		wailsruntime.EventsEmit(a.ctx, eventName, string(payload))
+	}
 }
 
 func (a *App) CheckAVIFEnc(avifencPath string) (string, error) {
@@ -143,6 +170,10 @@ func (a *App) CheckAVIFEnc(avifencPath string) (string, error) {
 }
 
 func withDefaultUploadRemotePath(cfg config.UploadConfig, sourceDir string) config.UploadConfig {
+	if custom := strings.Trim(strings.TrimSpace(cfg.CustomPath), "/"); custom != "" {
+		return applyUploadSubpath(cfg, filepath.ToSlash(custom))
+	}
+
 	name := filepath.Base(filepath.Clean(sourceDir))
 	if name == "." || name == string(filepath.Separator) || strings.TrimSpace(name) == "" {
 		return cfg
@@ -160,6 +191,30 @@ func withDefaultUploadRemotePath(cfg config.UploadConfig, sourceDir string) conf
 	default:
 		if isUnsetRemotePath(cfg.S3.Prefix) {
 			cfg.S3.Prefix = filepath.ToSlash(name)
+		}
+	}
+	return cfg
+}
+
+func applyUploadSubpath(cfg config.UploadConfig, subpath string) config.UploadConfig {
+	switch strings.ToLower(strings.TrimSpace(cfg.Protocol)) {
+	case "ftp":
+		if isUnsetRemotePath(cfg.FTP.RemoteDir) {
+			cfg.FTP.RemoteDir = "/" + subpath
+		} else {
+			cfg.FTP.RemoteDir = strings.TrimRight(cfg.FTP.RemoteDir, "/") + "/" + subpath
+		}
+	case "sftp":
+		if isUnsetRemotePath(cfg.SFTP.RemoteDir) {
+			cfg.SFTP.RemoteDir = "/" + subpath
+		} else {
+			cfg.SFTP.RemoteDir = strings.TrimRight(cfg.SFTP.RemoteDir, "/") + "/" + subpath
+		}
+	default:
+		if isUnsetRemotePath(cfg.S3.Prefix) {
+			cfg.S3.Prefix = subpath
+		} else {
+			cfg.S3.Prefix = strings.TrimRight(cfg.S3.Prefix, "/") + "/" + subpath
 		}
 	}
 	return cfg
