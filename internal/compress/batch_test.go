@@ -3,12 +3,14 @@ package compress
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"image"
 	"image/color"
 	"image/png"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -71,6 +73,37 @@ func TestCompressDirectoryRunsAllImages(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(outputDir, "sub", "b.avif")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCompressDirectoryReturnsEmptySlicesForNoMatches(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("notes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CompressDirectory(context.Background(), BatchOptions{
+		InputDir:  root,
+		OutputDir: filepath.Join(root, "out"),
+		Format:    "avif",
+	}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Results == nil {
+		t.Fatal("Results is nil, want empty slice")
+	}
+	if result.Errors == nil {
+		t.Fatal("Errors is nil, want empty slice")
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := string(data)
+	if strings.Contains(payload, `"results":null`) || strings.Contains(payload, `"errors":null`) {
+		t.Fatalf("batch JSON contains null slices: %s", payload)
 	}
 }
 

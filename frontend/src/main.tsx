@@ -279,12 +279,13 @@ function App() {
         MaxWorkers: config.compress.workers,
         Params: buildCompressParams(config),
       });
-      setCompressResult(result);
-      setPreviewItems(await api.BuildPreviewItems(result, 4));
-      setInputDir(result.outputDir);
-      setOutputDir(result.outputDir);
+      const normalized = normalizeCompressBatchResult(result);
+      setCompressResult(normalized);
+      setPreviewItems(await api.BuildPreviewItems(normalized, 4));
+      setInputDir(normalized.outputDir);
+      setOutputDir(normalized.outputDir);
       setActiveTab('upload');
-      setStatus(`准备并压缩完成：${result.compressedFiles}/${result.totalFiles} 个文件成功，可继续上传。`);
+      setStatus(`准备并压缩完成：${normalized.compressedFiles}/${normalized.totalFiles} 个文件成功，可继续上传。`);
     } catch (error) {
       setStatus(`准备并压缩失败：${String(error)}`);
     }
@@ -332,13 +333,15 @@ function App() {
         uploadConfig: config.upload,
         uploadRecursive: recursive,
       });
-      setCompressResult(result.compress);
-      setPreviewItems(await api.BuildPreviewItems(result.compress, 4));
-      setUploadResult(result.upload);
-      setInputDir(result.compress.outputDir);
-      setOutputDir(result.compress.outputDir);
+      const compressResult = normalizeCompressBatchResult(result.compress);
+      const uploadResult = normalizeUploadResult(result.upload);
+      setCompressResult(compressResult);
+      setPreviewItems(await api.BuildPreviewItems(compressResult, 4));
+      setUploadResult(uploadResult);
+      setInputDir(compressResult.outputDir);
+      setOutputDir(compressResult.outputDir);
       setActiveTab('upload');
-      setStatus(`全流程完成：压缩 ${result.compress.compressedFiles}/${result.compress.totalFiles}，上传 ${result.upload.uploadedFiles}/${result.upload.totalFiles}。`);
+      setStatus(`全流程完成：压缩 ${compressResult.compressedFiles}/${compressResult.totalFiles}，上传 ${uploadResult.uploadedFiles}/${uploadResult.totalFiles}。`);
     } catch (error) {
       setStatus(`全流程执行失败：${String(error)}`);
     }
@@ -424,8 +427,9 @@ function App() {
         MaxWorkers: config.compress.workers,
         Params: buildCompressParams(config),
       });
-      setCompressResult(result);
-      setPreviewItems(await api.BuildPreviewItems(result, 4));
+      const normalized = normalizeCompressBatchResult(result);
+      setCompressResult(normalized);
+      setPreviewItems(await api.BuildPreviewItems(normalized, 4));
       setStatus(`批量压缩完成：${result.compressedFiles}/${result.totalFiles} 个文件成功。`);
     } catch (error) {
       setStatus(`批量压缩失败：${String(error)}`);
@@ -474,7 +478,7 @@ function App() {
     }
     try {
       const result = await api.UploadDirectory(inputDir, recursive, config.upload);
-      setUploadResult(result);
+      setUploadResult(normalizeUploadResult(result));
       setStatus(`上传完成：${result.uploadedFiles}/${result.totalFiles} 个文件成功。`);
     } catch (error) {
       setStatus(`上传执行失败：${String(error)}`);
@@ -1112,33 +1116,34 @@ function UploadResultPanel(props: { result: UploadResult | null }) {
   if (!props.result) {
     return <div className="empty-state">填写目录与连接参数后开始上传。</div>;
   }
+  const result = normalizeUploadResult(props.result);
 
   return (
     <div className="result-stack">
       <div className="metric-grid">
         <div className="metric">
           <span>总文件</span>
-          <strong>{props.result.totalFiles}</strong>
+          <strong>{result.totalFiles}</strong>
         </div>
         <div className="metric">
           <span>成功</span>
-          <strong>{props.result.uploadedFiles}</strong>
+          <strong>{result.uploadedFiles}</strong>
         </div>
         <div className="metric">
           <span>失败</span>
-          <strong>{props.result.failedFiles}</strong>
+          <strong>{result.failedFiles}</strong>
         </div>
       </div>
-      {props.result.urls.length > 0 && (
+      {result.urls.length > 0 && (
         <div className="result-list">
-          {props.result.urls.slice(0, 8).map((url) => (
+          {result.urls.slice(0, 8).map((url) => (
             <span key={url}>{url}</span>
           ))}
         </div>
       )}
-      {props.result.errors.length > 0 && (
+      {result.errors.length > 0 && (
         <div className="result-list error-list">
-          {props.result.errors.slice(0, 8).map((error) => (
+          {result.errors.slice(0, 8).map((error) => (
             <span key={error}>{error}</span>
           ))}
         </div>
@@ -1156,9 +1161,10 @@ function CompressResultPanel(props: {
   if (!props.result) {
     return <div className="empty-state">选择格式和目录后开始批量压缩。</div>;
   }
+  const result = normalizeCompressBatchResult(props.result);
 
-  const ratio = props.result.originalSize > 0
-    ? `${Math.max(0, 100 - (props.result.compressedSize / props.result.originalSize) * 100).toFixed(1)}%`
+  const ratio = result.originalSize > 0
+    ? `${Math.max(0, 100 - (result.compressedSize / result.originalSize) * 100).toFixed(1)}%`
     : '-';
 
   return (
@@ -1166,15 +1172,15 @@ function CompressResultPanel(props: {
       <div className="metric-grid">
         <div className="metric">
           <span>总文件</span>
-          <strong>{props.result.totalFiles}</strong>
+          <strong>{result.totalFiles}</strong>
         </div>
         <div className="metric">
           <span>成功</span>
-          <strong>{props.result.compressedFiles}</strong>
+          <strong>{result.compressedFiles}</strong>
         </div>
         <div className="metric">
           <span>失败</span>
-          <strong>{props.result.failedFiles}</strong>
+          <strong>{result.failedFiles}</strong>
         </div>
         <div className="metric">
           <span>节省</span>
@@ -1182,8 +1188,8 @@ function CompressResultPanel(props: {
         </div>
       </div>
       <div className="placeholder-list">
-        <span>输出目录：{props.result.outputDir}</span>
-        <span>{`体积：${formatSize(props.result.originalSize)} -> ${formatSize(props.result.compressedSize)}`}</span>
+        <span>输出目录：{result.outputDir}</span>
+        <span>{`体积：${formatSize(result.originalSize)} -> ${formatSize(result.compressedSize)}`}</span>
       </div>
       {props.previewItems.length > 0 && (
         <div className="preview-list">
@@ -1216,9 +1222,9 @@ function CompressResultPanel(props: {
           </figure>
         </div>
       )}
-      {props.result.errors.length > 0 && (
+      {result.errors.length > 0 && (
         <div className="result-list error-list">
-          {props.result.errors.slice(0, 8).map((error) => (
+          {result.errors.slice(0, 8).map((error) => (
             <span key={error}>{error}</span>
           ))}
         </div>
@@ -1301,6 +1307,31 @@ function normalizeScanResult(result: Partial<ScanResult>): ScanResult {
     others: result.others ?? [],
     totalSize: result.totalSize ?? 0,
     subdirs: result.subdirs ?? 0,
+  };
+}
+
+function normalizeCompressBatchResult(result: Partial<CompressBatchResult>): CompressBatchResult {
+  return {
+    totalFiles: result.totalFiles ?? 0,
+    compressedFiles: result.compressedFiles ?? 0,
+    skippedFiles: result.skippedFiles ?? 0,
+    failedFiles: result.failedFiles ?? 0,
+    outputDir: result.outputDir ?? '',
+    originalSize: result.originalSize ?? 0,
+    compressedSize: result.compressedSize ?? 0,
+    elapsedSeconds: result.elapsedSeconds ?? 0,
+    results: result.results ?? [],
+    errors: result.errors ?? [],
+  };
+}
+
+function normalizeUploadResult(result: Partial<UploadResult>): UploadResult {
+  return {
+    totalFiles: result.totalFiles ?? 0,
+    uploadedFiles: result.uploadedFiles ?? 0,
+    failedFiles: result.failedFiles ?? 0,
+    urls: result.urls ?? [],
+    errors: result.errors ?? [],
   };
 }
 

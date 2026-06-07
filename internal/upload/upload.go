@@ -41,7 +41,11 @@ func UploadFiles(uploader Uploader, inputDir string, files []string, options Opt
 }
 
 func uploadFiles(uploader Uploader, inputDir string, files []string, options Options, progress ProgressFunc) (Result, error) {
-	result := Result{TotalFiles: len(files)}
+	result := Result{
+		TotalFiles: len(files),
+		URLs:       []string{},
+		Errors:     []string{},
+	}
 	if err := uploader.Connect(); err != nil {
 		return result, err
 	}

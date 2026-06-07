@@ -54,7 +54,10 @@ func (a *App) ExecutePrepare(operations []prepare.Operation, overwrite bool) (pr
 }
 
 func (a *App) PreviewAVIFCommand(inputPath string, outputPath string, params compress.Params, avifencPath string) []string {
-	if avifencPath == "" {
+	resolved, err := compress.ResolveAVIFEncPath(avifencPath)
+	if err == nil {
+		avifencPath = resolved
+	} else if avifencPath == "" {
 		avifencPath = "avifenc"
 	}
 	return compress.BuildAVIFCommand(avifencPath, inputPath, outputPath, params)
@@ -114,10 +117,11 @@ func (a *App) UploadDirectory(inputDir string, recursive bool, cfg config.Upload
 }
 
 func (a *App) CheckAVIFEnc(avifencPath string) (string, error) {
-	if avifencPath == "" {
-		avifencPath = "avifenc"
+	resolved, err := compress.ResolveAVIFEncPath(avifencPath)
+	if err != nil {
+		return "", err
 	}
-	out, err := exec.Command(avifencPath, "--version").CombinedOutput()
+	out, err := exec.Command(resolved, "--version").CombinedOutput()
 	return string(out), err
 }
 

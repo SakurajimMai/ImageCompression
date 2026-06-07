@@ -42,8 +42,9 @@ func RunAVIF(ctx context.Context, avifencPath string, inputPath string, outputPa
 	if err != nil {
 		return Result{Success: false, InputPath: inputPath, OutputPath: outputPath, Error: err.Error()}, err
 	}
-	if avifencPath == "" {
-		avifencPath = "avifenc"
+	avifencPath, err = ResolveAVIFEncPath(avifencPath)
+	if err != nil {
+		return Result{Success: false, InputPath: inputPath, OutputPath: outputPath, OriginalSize: inputInfo.Size(), Error: err.Error()}, err
 	}
 	if runner == nil {
 		runner = defaultRunner
@@ -82,6 +83,29 @@ func RunAVIF(ctx context.Context, avifencPath string, inputPath string, outputPa
 	}
 	result.CompressedSize = outputInfo.Size()
 	return result, nil
+}
+
+func ResolveAVIFEncPath(avifencPath string) (string, error) {
+	avifencPath = strings.TrimSpace(avifencPath)
+	if avifencPath == "" {
+		return "avifenc", nil
+	}
+	if !filepath.IsAbs(avifencPath) && !strings.ContainsAny(avifencPath, `/\`) {
+		return avifencPath, nil
+	}
+	cleaned := filepath.Clean(avifencPath)
+	info, err := os.Stat(cleaned)
+	if err != nil {
+		return "", fmt.Errorf("avifenc 路径不可用: %s", cleaned)
+	}
+	if info.IsDir() {
+		candidate := filepath.Join(cleaned, "avifenc.exe")
+		if _, err := os.Stat(candidate); err != nil {
+			return "", fmt.Errorf("avifenc 目录中未找到 avifenc.exe: %s", candidate)
+		}
+		return candidate, nil
+	}
+	return cleaned, nil
 }
 
 func defaultRunner(ctx context.Context, command []string) ([]byte, error) {

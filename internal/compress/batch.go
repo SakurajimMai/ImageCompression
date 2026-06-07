@@ -59,7 +59,12 @@ func CompressDirectory(ctx context.Context, options BatchOptions, runner Runner,
 	if err != nil {
 		return BatchResult{}, err
 	}
-	result := BatchResult{TotalFiles: len(files), OutputDir: options.OutputDir}
+	result := BatchResult{
+		TotalFiles: len(files),
+		OutputDir:  options.OutputDir,
+		Results:    []Result{},
+		Errors:     []string{},
+	}
 
 	processOneFile := func(index int, inputPath string) Result {
 		outputPath, err := BuildOutputPath(options.InputDir, options.OutputDir, inputPath, options.Format, options.Recursive)

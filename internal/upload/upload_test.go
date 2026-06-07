@@ -3,6 +3,7 @@ package upload
 import (
 	"bufio"
 	"encoding/base64"
+	"encoding/json"
 	"net"
 	"net/http"
 	"os"
@@ -53,6 +54,28 @@ func TestUploadDirectoryUsesUploaderAndCollectsURLs(t *testing.T) {
 		if uploader.names[i] != want {
 			t.Fatalf("remote[%d] = %q, want %q", i, uploader.names[i], want)
 		}
+	}
+}
+
+func TestUploadFilesReturnsEmptySlicesForNoFiles(t *testing.T) {
+	result, err := UploadFiles(&recordingUploader{}, t.TempDir(), nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.URLs == nil {
+		t.Fatal("URLs is nil, want empty slice")
+	}
+	if result.Errors == nil {
+		t.Fatal("Errors is nil, want empty slice")
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := string(data)
+	if strings.Contains(payload, `"urls":null`) || strings.Contains(payload, `"errors":null`) {
+		t.Fatalf("upload JSON contains null slices: %s", payload)
 	}
 }
 

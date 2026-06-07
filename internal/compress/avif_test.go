@@ -78,6 +78,42 @@ func TestRunAVIFUsesRunnerAndReturnsSizes(t *testing.T) {
 	}
 }
 
+func TestResolveAVIFEncPathAcceptsDirectory(t *testing.T) {
+	root := t.TempDir()
+	exe := filepath.Join(root, "avifenc.exe")
+	if err := os.WriteFile(exe, []byte("stub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ResolveAVIFEncPath(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got != exe {
+		t.Fatalf("resolved avifenc path = %q, want %q", got, exe)
+	}
+}
+
+func TestResolveAVIFEncPathKeepsCommandNameForPathLookup(t *testing.T) {
+	got, err := ResolveAVIFEncPath("avifenc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "avifenc" {
+		t.Fatalf("resolved avifenc path = %q, want avifenc", got)
+	}
+}
+
+func TestResolveAVIFEncPathRejectsMissingPath(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing", "avifenc.exe")
+
+	_, err := ResolveAVIFEncPath(missing)
+	if err == nil {
+		t.Fatal("expected missing avifenc path error")
+	}
+}
+
 func TestBuildAVIFCommandUsesLosslessInsteadOfQualityRange(t *testing.T) {
 	cmd := BuildAVIFCommand("avifenc", "in.png", "out.avif", Params{
 		Lossless: true,
