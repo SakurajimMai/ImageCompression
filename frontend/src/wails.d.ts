@@ -15,6 +15,7 @@ declare global {
           ReadImageDataURL(path: string): Promise<string>;
           RunPrepareCompressUpload(options: RunAllOptions): Promise<RunAllResult>;
           UploadDirectory(inputDir: string, recursive: boolean, config: AppConfig['upload']): Promise<UploadResult>;
+          UploadDirectoryWithRoot(inputDir: string, recursive: boolean, config: AppConfig['upload'], remoteRootDir: string): Promise<UploadResult>;
           CheckAVIFEnc(avifencPath: string): Promise<string>;
         };
       };
@@ -206,6 +207,7 @@ export type RunAllOptions = {
   compressOptions: CompressBatchOptions;
   uploadConfig: AppConfig['upload'];
   uploadRecursive: boolean;
+  uploadRootDir: string;
 };
 
 export type RunAllResult = {

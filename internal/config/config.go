@@ -145,7 +145,7 @@ func Default() Config {
 				Port: 7890,
 			},
 		},
-		AvifencPath: "avifenc",
+		AvifencPath: "",
 		Language:    "zh",
 		Theme:       "light",
 	}
@@ -176,6 +176,7 @@ func Load(path string) (Config, error) {
 }
 
 func Save(path string, cfg Config) error {
+	cfg.Normalize()
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
@@ -191,7 +192,26 @@ func SaveRaw(path string, data []byte) error {
 }
 
 func (cfg *Config) Normalize() {
+	cfg.AvifencPath = normalizeAVIFEncPath(cfg.AvifencPath)
 	cfg.Upload.Proxy.Normalize()
+}
+
+func normalizeAVIFEncPath(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.EqualFold(trimmed, "avifenc") || strings.EqualFold(trimmed, "avifenc.exe") {
+		return ""
+	}
+	if !filepath.IsAbs(trimmed) && !strings.ContainsAny(trimmed, `/\`) {
+		return trimmed
+	}
+	cleaned := filepath.Clean(trimmed)
+	if strings.EqualFold(filepath.Base(cleaned), "avifenc.exe") {
+		return filepath.Dir(cleaned)
+	}
+	return cleaned
 }
 
 func (proxy *ProxyConfig) Normalize() {

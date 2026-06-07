@@ -110,6 +110,7 @@ func ResolveAVIFEncPath(avifencPath string) (string, error) {
 
 func defaultRunner(ctx context.Context, command []string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
+	configureHiddenCommand(cmd)
 	return cmd.CombinedOutput()
 }
 

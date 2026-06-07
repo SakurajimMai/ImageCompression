@@ -1,6 +1,8 @@
 package config
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -128,5 +130,56 @@ func TestLoadNormalizesLegacyProxyURLForSettingsForm(t *testing.T) {
 		cfg.Upload.Proxy.Username != "bob" ||
 		cfg.Upload.Proxy.Password != "secret" {
 		t.Fatalf("legacy proxy URL was not normalized: %#v", cfg.Upload.Proxy)
+	}
+}
+
+func TestNormalizeAVIFEncFilePathToDirectory(t *testing.T) {
+	dir := t.TempDir()
+	avifencFile := filepath.Join(dir, "windows-artifacts", "avifenc.exe")
+	cfg := Default()
+	cfg.AvifencPath = avifencFile
+
+	cfg.Normalize()
+
+	want := filepath.Dir(avifencFile)
+	if cfg.AvifencPath != want {
+		t.Fatalf("avifenc_path = %q, want %q", cfg.AvifencPath, want)
+	}
+}
+
+func TestNormalizeLegacyAVIFEncCommandToEmptyDirectorySetting(t *testing.T) {
+	cfg := Default()
+	cfg.AvifencPath = "avifenc"
+
+	cfg.Normalize()
+
+	if cfg.AvifencPath != "" {
+		t.Fatalf("avifenc_path = %q, want empty PATH fallback", cfg.AvifencPath)
+	}
+}
+
+func TestSavePersistsNormalizedAVIFEncDirectory(t *testing.T) {
+	dir := t.TempDir()
+	avifencFile := filepath.Join(dir, "windows-artifacts", "avifenc.exe")
+	path := filepath.Join(dir, "config.json")
+	cfg := Default()
+	cfg.AvifencPath = avifencFile
+
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	var stored Config
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &stored); err != nil {
+		t.Fatal(err)
+	}
+
+	want := filepath.Dir(avifencFile)
+	if stored.AvifencPath != want {
+		t.Fatalf("stored avifenc_path = %q, want %q", stored.AvifencPath, want)
 	}
 }

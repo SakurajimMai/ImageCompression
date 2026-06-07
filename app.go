@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"imagecompression/internal/compress"
@@ -89,6 +91,7 @@ type RunAllOptions struct {
 	CompressOptions   compress.BatchOptions `json:"compressOptions"`
 	UploadConfig      config.UploadConfig   `json:"uploadConfig"`
 	UploadRecursive   bool                  `json:"uploadRecursive"`
+	UploadRootDir     string                `json:"uploadRootDir"`
 }
 
 func (a *App) RunPrepareCompressUpload(options RunAllOptions) (workflow.Result, error) {
@@ -106,13 +109,25 @@ func (a *App) RunPrepareCompressUpload(options RunAllOptions) (workflow.Result, 
 			return compress.CompressDirectory(ctx, batchOptions, nil, nil)
 		},
 		Upload: func(inputDir string) (upload.Result, error) {
-			return upload.UploadDirectory(buildUploader(options.UploadConfig), inputDir, upload.Options{Recursive: options.UploadRecursive}, nil)
+			rootDir := options.UploadRootDir
+			if strings.TrimSpace(rootDir) == "" {
+				rootDir = inputDir
+			}
+			uploadConfig := withDefaultUploadRemotePath(options.UploadConfig, rootDir)
+			return upload.UploadDirectory(buildUploader(uploadConfig), inputDir, upload.Options{Recursive: options.UploadRecursive}, nil)
 		},
 	})
 }
 
 func (a *App) UploadDirectory(inputDir string, recursive bool, cfg config.UploadConfig) (upload.Result, error) {
-	uploader := buildUploader(cfg)
+	return a.UploadDirectoryWithRoot(inputDir, recursive, cfg, inputDir)
+}
+
+func (a *App) UploadDirectoryWithRoot(inputDir string, recursive bool, cfg config.UploadConfig, remoteRootDir string) (upload.Result, error) {
+	if strings.TrimSpace(remoteRootDir) == "" {
+		remoteRootDir = inputDir
+	}
+	uploader := buildUploader(withDefaultUploadRemotePath(cfg, remoteRootDir))
 	return upload.UploadDirectory(uploader, inputDir, upload.Options{Recursive: recursive}, nil)
 }
 
@@ -121,8 +136,37 @@ func (a *App) CheckAVIFEnc(avifencPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	out, err := exec.Command(resolved, "--version").CombinedOutput()
+	cmd := exec.Command(resolved, "--version")
+	configureHiddenCommand(cmd)
+	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+func withDefaultUploadRemotePath(cfg config.UploadConfig, sourceDir string) config.UploadConfig {
+	name := filepath.Base(filepath.Clean(sourceDir))
+	if name == "." || name == string(filepath.Separator) || strings.TrimSpace(name) == "" {
+		return cfg
+	}
+
+	switch strings.ToLower(strings.TrimSpace(cfg.Protocol)) {
+	case "ftp":
+		if isUnsetRemotePath(cfg.FTP.RemoteDir) {
+			cfg.FTP.RemoteDir = "/" + filepath.ToSlash(name)
+		}
+	case "sftp":
+		if isUnsetRemotePath(cfg.SFTP.RemoteDir) {
+			cfg.SFTP.RemoteDir = "/" + filepath.ToSlash(name)
+		}
+	default:
+		if isUnsetRemotePath(cfg.S3.Prefix) {
+			cfg.S3.Prefix = filepath.ToSlash(name)
+		}
+	}
+	return cfg
+}
+
+func isUnsetRemotePath(path string) bool {
+	return strings.Trim(strings.TrimSpace(path), "/") == ""
 }
 
 func buildUploader(cfg config.UploadConfig) upload.Uploader {

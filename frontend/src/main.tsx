@@ -36,7 +36,7 @@ type PreviewImages = {
 const fallbackConfig: AppConfig = {
   last_input_dir: '',
   last_output_dir: '',
-  avifenc_path: 'avifenc',
+  avifenc_path: '',
   language: 'zh',
   theme: 'light',
   prepare: {
@@ -129,6 +129,7 @@ function App() {
   const [previewItems, setPreviewItems] = useState<PreviewItem[]>([]);
   const [previewImages, setPreviewImages] = useState<PreviewImages>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
+  const [uploadRootDir, setUploadRootDir] = useState('');
   const [status, setStatus] = useState('Go/Wails 版本已作为当前主版本运行。');
 
   useEffect(() => {
@@ -163,6 +164,11 @@ function App() {
     ];
   }, [scan]);
 
+  function handleInputDirChange(value: string) {
+    setInputDir(value);
+    setUploadRootDir('');
+  }
+
   async function runScan() {
     if (!inputDir.trim()) {
       setStatus('请先输入要扫描的目录。');
@@ -179,12 +185,14 @@ function App() {
         subdirs: 1,
       };
       setScan(demo);
+      setUploadRootDir(demo.baseDir);
       setStatus('浏览器预览模式：已生成示例扫描结果。');
       return;
     }
     try {
       const result = normalizeScanResult(await api.ScanDirectory(inputDir, recursive));
       setScan(result);
+      setUploadRootDir(result.baseDir);
       setStatus(`扫描完成：${result.images.length} 张图片，${result.videos.length} 个视频。`);
     } catch (error) {
       setStatus(`扫描失败：${String(error)}`);
@@ -224,8 +232,8 @@ function App() {
   }
 
   async function executePrepare() {
-    if (!preparePlan.length) {
-      setStatus('请先生成准备计划。');
+    if (!scan && !preparePlan.length) {
+      setStatus('请先扫描目录。');
       return;
     }
     const api = backend();
@@ -234,7 +242,24 @@ function App() {
       return;
     }
     try {
-      const result = await api.ExecutePrepare(preparePlan, config.prepare.output_mode === 'overwrite');
+      let plan = preparePlan;
+      if (!plan.length && scan) {
+        const targetDir = outputDir || `${scan.baseDir}_prepared`;
+        plan = await api.PlanPrepare(
+          { BaseDir: scan.baseDir, Images: scan.images, Videos: scan.videos },
+          targetDir,
+          {
+            RenameImages: config.prepare.rename_images,
+            RenameVideos: config.prepare.rename_videos,
+            Overwrite: config.prepare.output_mode === 'overwrite',
+          },
+        );
+        setPreparePlan(plan);
+      }
+      const result = await api.ExecutePrepare(plan, config.prepare.output_mode === 'overwrite');
+      setUploadRootDir(uploadRootDir || scan?.baseDir || result.outputDir);
+      setInputDir(result.outputDir);
+      setOutputDir('');
       setStatus(`准备完成：${result.totalFiles} 个文件，输出目录 ${result.outputDir}`);
     } catch (error) {
       setStatus(`准备执行失败：${String(error)}`);
@@ -282,8 +307,9 @@ function App() {
       const normalized = normalizeCompressBatchResult(result);
       setCompressResult(normalized);
       setPreviewItems(await api.BuildPreviewItems(normalized, 4));
+      setUploadRootDir(scan.baseDir);
       setInputDir(normalized.outputDir);
-      setOutputDir(normalized.outputDir);
+      setOutputDir('');
       setActiveTab('upload');
       setStatus(`准备并压缩完成：${normalized.compressedFiles}/${normalized.totalFiles} 个文件成功，可继续上传。`);
     } catch (error) {
@@ -332,14 +358,16 @@ function App() {
         },
         uploadConfig: config.upload,
         uploadRecursive: recursive,
+        uploadRootDir: scan.baseDir,
       });
       const compressResult = normalizeCompressBatchResult(result.compress);
       const uploadResult = normalizeUploadResult(result.upload);
       setCompressResult(compressResult);
       setPreviewItems(await api.BuildPreviewItems(compressResult, 4));
       setUploadResult(uploadResult);
+      setUploadRootDir(scan.baseDir);
       setInputDir(compressResult.outputDir);
-      setOutputDir(compressResult.outputDir);
+      setOutputDir('');
       setActiveTab('upload');
       setStatus(`全流程完成：压缩 ${compressResult.compressedFiles}/${compressResult.totalFiles}，上传 ${uploadResult.uploadedFiles}/${uploadResult.totalFiles}。`);
     } catch (error) {
@@ -430,6 +458,9 @@ function App() {
       const normalized = normalizeCompressBatchResult(result);
       setCompressResult(normalized);
       setPreviewItems(await api.BuildPreviewItems(normalized, 4));
+      setInputDir(normalized.outputDir);
+      setOutputDir('');
+      setUploadRootDir(uploadRootDir || inputDir);
       setStatus(`批量压缩完成：${result.compressedFiles}/${result.totalFiles} 个文件成功。`);
     } catch (error) {
       setStatus(`批量压缩失败：${String(error)}`);
@@ -477,7 +508,7 @@ function App() {
       return;
     }
     try {
-      const result = await api.UploadDirectory(inputDir, recursive, config.upload);
+      const result = await api.UploadDirectoryWithRoot(inputDir, recursive, config.upload, uploadRootDir || inputDir);
       setUploadResult(normalizeUploadResult(result));
       setStatus(`上传完成：${result.uploadedFiles}/${result.totalFiles} 个文件成功。`);
     } catch (error) {
@@ -545,7 +576,7 @@ function App() {
         {activeTab === 'prepare' && (
           <PrepareView
             inputDir={inputDir}
-            setInputDir={setInputDir}
+            setInputDir={handleInputDirChange}
             outputDir={outputDir}
             setOutputDir={setOutputDir}
             recursive={recursive}
@@ -565,6 +596,12 @@ function App() {
           <CompressView
             config={config}
             setConfig={setConfig}
+            inputDir={inputDir}
+            setInputDir={handleInputDirChange}
+            outputDir={outputDir}
+            setOutputDir={setOutputDir}
+            recursive={recursive}
+            setRecursive={setRecursive}
             avifCommand={avifCommand}
             compressResult={compressResult}
             previewItems={previewItems}
@@ -580,7 +617,7 @@ function App() {
             config={config}
             setConfig={setConfig}
             inputDir={inputDir}
-            setInputDir={setInputDir}
+            setInputDir={handleInputDirChange}
             recursive={recursive}
             setRecursive={setRecursive}
             uploadResult={uploadResult}
@@ -701,6 +738,12 @@ function PrepareView(props: {
 function CompressView(props: {
   config: AppConfig;
   setConfig: (value: AppConfig) => void;
+  inputDir: string;
+  setInputDir: (value: string) => void;
+  outputDir: string;
+  setOutputDir: (value: string) => void;
+  recursive: boolean;
+  setRecursive: (value: boolean) => void;
   avifCommand: string[];
   compressResult: CompressBatchResult | null;
   previewItems: PreviewItem[];
@@ -723,6 +766,20 @@ function CompressView(props: {
 
   return (
     <div className="content-grid">
+      <section className="panel wide">
+        <h2>压缩目录</h2>
+        <div className="form-grid">
+          <Field label="输入目录" value={props.inputDir} onChange={props.setInputDir} placeholder="D:/photos/prepared" />
+          <Field label="输出目录" value={props.outputDir} onChange={props.setOutputDir} placeholder="留空自动生成 _compressed 目录" />
+        </div>
+        <Checkbox label="递归压缩子目录" checked={props.recursive} onChange={props.setRecursive} />
+        <div className="button-row">
+          <button onClick={props.onCompressDirectory}>
+            <Archive size={16} />
+            压缩目录
+          </button>
+        </div>
+      </section>
       <section className="panel">
         <h2>格式</h2>
         <div className="segmented">
@@ -841,10 +898,6 @@ function CompressView(props: {
           <button onClick={props.onCompressFirstImage}>
             <Play size={16} />
             压缩首张图片
-          </button>
-          <button onClick={props.onCompressDirectory}>
-            <Archive size={16} />
-            压缩目录
           </button>
         </div>
         <pre className="command-preview">{props.avifCommand.length ? props.avifCommand.join(' ') : '等待生成命令...'}</pre>
@@ -987,10 +1040,10 @@ function SettingsView(props: {
       <section className="panel">
         <h2>运行时</h2>
         <Field
-          label="avifenc 路径"
+          label="avifenc 目录"
           value={props.config.avifenc_path}
           onChange={(value) => props.setConfig({ ...props.config, avifenc_path: value })}
-          placeholder="avifenc"
+          placeholder="C:/Users/sakurajiamai/Desktop/code/ImageCompression/build/bin/windows-artifacts"
         />
       </section>
       <section className="panel wide">
