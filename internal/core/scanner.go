@@ -29,7 +29,12 @@ type ScanResult struct {
 
 func ScanDirectory(root string, recursive bool) (ScanResult, error) {
 	root = filepath.Clean(root)
-	result := ScanResult{BaseDir: root}
+	result := ScanResult{
+		BaseDir: root,
+		Images:  []string{},
+		Videos:  []string{},
+		Others:  []string{},
+	}
 	seenDirs := map[string]struct{}{}
 
 	visit := func(path string, info os.FileInfo, err error) error {

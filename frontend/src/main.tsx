@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Component, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Archive,
@@ -183,7 +183,7 @@ function App() {
       return;
     }
     try {
-      const result = await api.ScanDirectory(inputDir, recursive);
+      const result = normalizeScanResult(await api.ScanDirectory(inputDir, recursive));
       setScan(result);
       setStatus(`扫描完成：${result.images.length} 张图片，${result.videos.length} 个视频。`);
     } catch (error) {
@@ -1293,4 +1293,41 @@ function basename(path: string) {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+function normalizeScanResult(result: Partial<ScanResult>): ScanResult {
+  return {
+    baseDir: result.baseDir ?? '',
+    images: result.images ?? [],
+    videos: result.videos ?? [],
+    others: result.others ?? [],
+    totalSize: result.totalSize ?? 0,
+    subdirs: result.subdirs ?? 0,
+  };
+}
+
+class ErrorBoundary extends Component<{ children: React.ReactNode }, { error: string | null }> {
+  state = { error: null };
+
+  static getDerivedStateFromError(error: unknown) {
+    return { error: String(error) };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <main className="app-shell">
+          <section className="workspace error-screen">
+            <h1>界面渲染失败</h1>
+            <p>{this.state.error}</p>
+          </section>
+        </main>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+createRoot(document.getElementById('root')!).render(
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>,
+);
