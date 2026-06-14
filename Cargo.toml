@@ -1,6 +1,6 @@
 [package]
 name = "imagecompression"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["ImageCompression Contributors"]
 description = "Image preparation, compression (AVIF/WebP/JPEG) and upload (S3/FTP/SFTP) — TUI + CLI in pure Rust. pikpaktui-inspired."
@@ -41,6 +41,7 @@ default = ["sftp"]
 # 启用 SFTP 协议支持。需要本机装有 OpenSSL(或 MinGW 工具链以便
 # ssh2 自带 vendored-openssl 编译)。不开就只支持 S3 + FTP。
 sftp = ["dep:ssh2"]
+sftp-vendored-openssl = ["sftp", "ssh2/vendored-openssl"]
 
 [profile.release]
 codegen-units = 1

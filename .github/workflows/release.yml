@@ -45,18 +45,21 @@ jobs:
             binary_name: imagecompression
             asset_name: imagecompression-aarch64-linux.tar.gz
             use_cross: true
+            vendored_openssl: true
           # macOS x86_64 (Intel)
-          - os: macos-latest
+          - os: macos-13
             target: x86_64-apple-darwin
             archive: tar.gz
             binary_name: imagecompression
             asset_name: imagecompression-x86_64-macos.tar.gz
+            vendored_openssl: true
           # macOS aarch64 (Apple Silicon)
           - os: macos-latest
             target: aarch64-apple-darwin
             archive: tar.gz
             binary_name: imagecompression
             asset_name: imagecompression-aarch64-macos.tar.gz
+            vendored_openssl: true
 
     runs-on: ${{ matrix.os }}
 
@@ -74,11 +77,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y pkg-config zlib1g-dev libssl-dev
 
       - name: Install native dependencies (macOS)
-        if: runner.os == 'macOS'
+        if: ${{ runner.os == 'macOS' && !matrix.vendored_openssl }}
         run: brew install pkg-config openssl zlib
 
       - name: Configure native dependencies (macOS)
-        if: runner.os == 'macOS'
+        if: ${{ runner.os == 'macOS' && !matrix.vendored_openssl }}
         run: |
           echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
           echo "PKG_CONFIG_PATH=$(brew --prefix zlib)/lib/pkgconfig:$(brew --prefix openssl@3)/lib/pkgconfig" >> "$GITHUB_ENV"
@@ -88,12 +91,20 @@ jobs:
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Build (native)
-        if: ${{ !matrix.use_cross }}
+        if: ${{ !matrix.use_cross && !matrix.vendored_openssl }}
         run: cargo build --release --target ${{ matrix.target }}
 
+      - name: Build (native, vendored OpenSSL)
+        if: ${{ !matrix.use_cross && matrix.vendored_openssl }}
+        run: cargo build --release --target ${{ matrix.target }} --no-default-features --features sftp-vendored-openssl
+
       - name: Build (cross)
-        if: matrix.use_cross
+        if: ${{ matrix.use_cross && !matrix.vendored_openssl }}
         run: cross build --release --target ${{ matrix.target }}
+
+      - name: Build (cross, vendored OpenSSL)
+        if: ${{ matrix.use_cross && matrix.vendored_openssl }}
+        run: cross build --release --target ${{ matrix.target }} --no-default-features --features sftp-vendored-openssl
 
       - name: Prepare binary (Unix)
         if: runner.os != 'Windows'
