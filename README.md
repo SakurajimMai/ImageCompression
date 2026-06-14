@@ -1,51 +1,75 @@
 # Image Compression
 
-Image Compression 是一个基于 Go + Wails + React/Vite 的桌面图片工作台，用于完成图片准备、压缩和上传流程。当前仓库只保留 Go/Wails 版本，旧 Python/PySide6 实现已移除。
+**Pure Rust TUI + CLI** (pikpaktui 风格重构)。
+
+- 采用 ratatui + crossterm 实现交互式 TUI（Miller 三列布局、键盘驱动、overlay 设置/帮助）。
+- 完整 CLI 支持（scan / prepare / compress / upload / all），带 `--json` 结构化输出，便于 agent/script 使用。
+- 核心功能与原实现一致：目录扫描、准备（重命名+整理）、AVIF/WebP/JPEG 压缩（支持 8 种 resize 策略）、S3/FTP/SFTP 上传 + 代理。
+- 配置完全兼容 `~/.imagecompression/config.json`。
+
+旧的 Go + Wails + React 代码已全部移除，项目现为纯 Rust。
+
+## 快速开始
+
+```powershell
+# 构建
+cargo build --release
+
+# 拷贝到常用位置（与 skill 兼容）
+mkdir -p build/bin
+Copy-Item target/release/ImageCompression.exe build/bin/ImageCompression.exe -Force
+
+# 运行 TUI（无参数）
+.\build\bin\ImageCompression.exe
+
+# 或 CLI
+.\build\bin\ImageCompression.exe --help
+.\build\bin\ImageCompression.exe scan --input ./photos --json
+```
 
 ## 功能
 
-- 目录扫描：识别图片、视频和其他文件，支持递归扫描。
-- 准备流程：图片/视频重命名、输出目录规划、批量复制执行。
-- 图片压缩：支持 AVIF、WebP、JPEG。
-- 缩放策略：支持不缩放、按宽度、按高度、百分比、长边、短边、fit、fill、exact。
-- 上传协议：支持 S3、FTP、SFTP。
-- 上传代理：支持 SOCKS5 与 HTTP CONNECT，支持用户名和密码。
-- 桌面分发：通过 Wails 构建 Windows 单 exe。
+- 目录扫描：识别图片、视频和其他文件，支持递归。
+- 准备流程：图片/视频重命名（0001.jpg / video001.xxx 规则）、输出目录规划、批量复制。
+- 图片压缩：AVIF（avifenc）、WebP（cwebp）、JPEG（Rust image crate）。
+- 缩放策略：none / width / height / percent / long_edge / short_edge / fit / fill / exact。
+- 上传：S3、FTP、SFTP，支持 SOCKS5 / HTTP CONNECT 代理 + 用户名密码。
+- 配置：`~/.imagecompression/config.json`（TUI 内可编辑保存）。
 
 ## 环境要求
 
 | 依赖 | 说明 |
 | --- | --- |
-| Go 1.23+ | 后端核心与 Wails 构建 |
-| Node.js 22+ | React/Vite 前端构建 |
-| Wails v2.10.2 | 桌面应用构建工具 |
-| avifenc | AVIF 压缩需要 |
-| cwebp | WebP 压缩需要 |
+| Rust (最新 stable) | 构建 TUI/CLI |
+| avifenc | AVIF 压缩需要（PATH 或 --avifenc 指定） |
+| cwebp | WebP 压缩需要（PATH） |
 
-JPEG 压缩由 Go 标准库直接完成，不依赖外部编码器。
+## 构建 & 发布
+
+本地构建：
+```powershell
+cargo build --release
+# Windows 产物为 ImageCompression.exe
+```
+
+**自动发布**：推送到 GitHub Releases（通过 GitHub Actions）会自动构建并发布多平台预构建二进制（Windows x86_64 / ARM64、Linux x86_64 / aarch64、macOS Intel / Apple Silicon），并附带 `sha256sums.txt`。
+
+Release profile 已优化（lto, strip, opt-level=s）。
+
+详见 `.github/workflows/release.yml` 和 BUILD_RUST.md。
+
+更多验证和 TUI 操作说明见 [BUILD_RUST.md](BUILD_RUST.md)。
 
 ## 开发命令
 
 ```powershell
-Push-Location frontend
-npm install
-npm run build
-Pop-Location
+cargo fmt -- --check
+cargo check --all-targets
+cargo test --all
 ```
 
 ```powershell
-go test ./...
-```
-
-```powershell
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.10.2 build
-```
-
-也可以先安装 Wails CLI：
-
-```powershell
-go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.2
-wails build
+cargo build --release
 ```
 
 构建产物位于：
@@ -58,26 +82,24 @@ build/bin/ImageCompression.exe
 
 ```text
 .
-├── app.go                 # Wails 后端绑定接口
-├── main.go                # Wails 应用入口
-├── go.mod
-├── go.sum
-├── wails.json
-├── internal/
-│   ├── compress/          # AVIF/WebP/JPEG 压缩、缩放、预览
-│   ├── config/            # 配置结构、加载、保存、代理兼容
-│   ├── core/              # 目录扫描
-│   ├── prepare/           # 准备计划与执行
-│   ├── upload/            # S3/FTP/SFTP 上传与代理拨号
-│   └── workflow/          # 准备-压缩-上传串联流程
-├── frontend/
-│   ├── src/               # React 工作台
-│   ├── package.json
-│   └── package-lock.json
-├── docs/
-│   └── GO_WAILS_REWRITE.md
+├── Cargo.toml
+├── Cargo.lock
+├── src/
+│   ├── main.rs            # TUI/CLI 入口
+│   ├── cmd/               # scan / prepare / compress / upload / all 子命令
+│   ├── core/              # 扫描、准备、压缩、上传、工作流
+│   ├── config.rs          # 配置加载、保存和兼容
+│   ├── theme.rs           # TUI 主题
+│   └── tui/               # ratatui 界面
+├── build/bin/windows-artifacts/
+│   ├── avifenc.exe        # Windows AVIF 编码器
+│   ├── avifdec.exe
+│   └── avifgainmaputil.exe
+├── skills/image-compression/
+│   └── SKILL.md           # agent 调用说明
 └── .github/workflows/
-    └── build.yml
+    ├── ci.yml
+    └── release.yml
 ```
 
 ## 配置
@@ -100,9 +122,4 @@ build/bin/ImageCompression.exe
 
 ## CI
 
-GitHub Actions 会在 Windows runner 上执行：
-
-1. 设置 Go 和 Node.js。
-2. 运行 `go test ./...`。
-3. 执行 `wails build`。
-4. 打包 `build/bin/ImageCompression.exe` 为 release artifact。
+GitHub Actions 会执行格式检查、`cargo check --all-targets`、`cargo test --all`，并在 tag 发布时构建多平台 release 产物。

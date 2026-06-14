@@ -1,28 +1,38 @@
-# Go
-*.test
-coverage.out
+# Rust
+/target/
+**/*.rs.bk
+# Keep Cargo.lock committed for reproducible application releases.
 
-# Node / Vite
-frontend/node_modules/
-frontend/dist/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Wails / distribution
-build/
+# Build artifacts (we keep some like windows-artifacts for avifenc)
+build/bin/ImageCompression.exe
+build/bin/ImageCompression
 dist/
-windows-artifacts/
 
-# Runtime config
+# Runtime / user config
+**/.imagecompression/
 config.json
 
-# IDE
+# IDE / editors
+.claude/
 .idea/
 .vscode/
 *.swp
 *.swo
+*.sublime-*
 
 # OS
 .DS_Store
 Thumbs.db
+ehthumbs.db
+
+# Logs / temp
+*.log
+tmp/
+temp/
+
+# Local image test artifacts
+*.zip
+*_compressed/
+*_prepared/
+*[0-9]P-[0-9]M]/
+*P-*M]/

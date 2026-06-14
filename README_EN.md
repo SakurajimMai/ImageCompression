@@ -1,51 +1,71 @@
 # Image Compression
 
-Image Compression is a Go + Wails + React/Vite desktop workbench for preparing, compressing, and uploading image assets. The repository now keeps only the Go/Wails implementation; the old Python/PySide6 implementation has been removed.
+**Pure Rust TUI + CLI** (inspired by pikpaktui style and layout).
+
+- ratatui + crossterm interactive TUI with Miller three-column layout and keyboard-driven navigation.
+- Full-featured CLI (scan/prepare/compress/upload/all) with `--json` structured output for agents/scripts.
+- Core features preserved 1:1: directory scan, prepare (renaming + copy), AVIF/WebP/JPEG compression with 8 resize strategies, S3/FTP/SFTP upload + proxies.
+- Fully compatible with `~/.imagecompression/config.json`.
+
+All old Go + Wails + React code has been removed. This is now a pure Rust project.
+
+## Quick Start
+
+```powershell
+cargo build --release
+mkdir -p build/bin
+Copy-Item target/release/ImageCompression.exe build/bin/ImageCompression.exe -Force
+
+# Launch TUI
+build/bin/ImageCompression.exe
+
+# Or use CLI
+build/bin/ImageCompression.exe --help
+build/bin/ImageCompression.exe scan --input ./photos --json
+```
+
+See BUILD_RUST.md for detailed Chinese build & verification guide.
 
 ## Features
 
-- Directory scanning with optional recursion.
-- Prepare workflow for renaming and copying image/video files.
-- AVIF, WebP, and JPEG compression.
-- Resize modes: none, width, height, percent, long edge, short edge, fit, fill, and exact.
-- S3, FTP, and SFTP uploads.
-- Upload proxy support for SOCKS5 and HTTP CONNECT, including username/password authentication.
-- Windows single-exe desktop build through Wails.
+- Directory scanning (images/videos/others, recursive).
+- Prepare workflow: rename (0001.jpg / video001.xxx per subdir), organize to output dir, copy.
+- Compression: AVIF (via avifenc), WebP (via cwebp), JPEG (pure Rust image crate).
+- Resize strategies: none, width, height, percent, long_edge, short_edge, fit, fill, exact.
+- Upload: S3, FTP, SFTP with SOCKS5/HTTP CONNECT proxy support (username/password).
+- Config: `~/.imagecompression/config.json` (editable from TUI).
 
 ## Requirements
 
 | Dependency | Purpose |
 | --- | --- |
-| Go 1.23+ | Backend core and Wails build |
-| Node.js 22+ | React/Vite frontend build |
-| Wails v2.10.2 | Desktop application build |
-| avifenc | AVIF encoding |
-| cwebp | WebP encoding |
+| Rust (stable) | Build TUI & CLI |
+| avifenc | Required for AVIF (in PATH or via --avifenc) |
+| cwebp | Required for WebP (in PATH) |
 
-JPEG encoding is handled by the Go standard library.
+## Build
+
+Local build:
+```powershell
+cargo build --release
+```
+
+**Automated releases**: Pushing a tag (e.g. `git tag v0.2.0 && git push --tags`) triggers GitHub Actions to build and publish pre-built binaries for Windows (x86_64 + aarch64), Linux (x86_64 + aarch64), macOS (Intel + Apple Silicon), plus `sha256sums.txt`.
+
+The release profile uses LTO, stripping, and size optimizations.
+
+See `.github/workflows/release.yml` and BUILD_RUST.md for details.
 
 ## Commands
 
 ```powershell
-Push-Location frontend
-npm install
-npm run build
-Pop-Location
+cargo fmt -- --check
+cargo check --all-targets
+cargo test --all
 ```
 
 ```powershell
-go test ./...
-```
-
-```powershell
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.10.2 build
-```
-
-Or install the Wails CLI first:
-
-```powershell
-go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.2
-wails build
+cargo build --release
 ```
 
 The Windows executable is generated at:
@@ -58,26 +78,24 @@ build/bin/ImageCompression.exe
 
 ```text
 .
-├── app.go
-├── main.go
-├── go.mod
-├── go.sum
-├── wails.json
-├── internal/
-│   ├── compress/
-│   ├── config/
+├── Cargo.toml
+├── Cargo.lock
+├── src/
+│   ├── main.rs
+│   ├── cmd/
 │   ├── core/
-│   ├── prepare/
-│   ├── upload/
-│   └── workflow/
-├── frontend/
-│   ├── src/
-│   ├── package.json
-│   └── package-lock.json
-├── docs/
-│   └── GO_WAILS_REWRITE.md
+│   ├── config.rs
+│   ├── theme.rs
+│   └── tui/
+├── build/bin/windows-artifacts/
+│   ├── avifenc.exe
+│   ├── avifdec.exe
+│   └── avifgainmaputil.exe
+├── skills/image-compression/
+│   └── SKILL.md
 └── .github/workflows/
-    └── build.yml
+    ├── ci.yml
+    └── release.yml
 ```
 
 ## Configuration
@@ -97,3 +115,7 @@ Proxy settings use structured fields:
 - `password`
 
 The legacy `url` field is only used for compatibility when loading older config files.
+
+## CI
+
+GitHub Actions runs formatting checks, `cargo check --all-targets`, `cargo test --all`, and builds multi-platform release artifacts on tags.
