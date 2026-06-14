@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
 use image::{imageops, DynamicImage, GenericImageView, ImageFormat, Rgba};
@@ -162,13 +162,16 @@ fn collect_image_files(dir: &str, recursive: bool) -> Result<Vec<PathBuf>> {
 
     if recursive {
         for entry in walkdir::WalkDir::new(root) {
-            let entry = entry?;
+            let entry = entry
+                .with_context(|| format!("failed to scan input directory: {}", root.display()))?;
             if entry.file_type().is_file() && is_image_file(entry.path()) {
                 files.push(entry.path().to_path_buf());
             }
         }
     } else {
-        for e in fs::read_dir(root)? {
+        for e in fs::read_dir(root)
+            .with_context(|| format!("failed to scan input directory: {}", root.display()))?
+        {
             let e = e?;
             let p = e.path();
             if p.is_file() && is_image_file(&p) {

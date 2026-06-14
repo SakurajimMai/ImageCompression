@@ -7,7 +7,7 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{self, UploadConfig};
@@ -74,13 +74,16 @@ pub fn collect_files(dir: &str, recursive: bool) -> Result<Vec<String>> {
     let root = Path::new(dir);
     if recursive {
         for e in walkdir::WalkDir::new(root) {
-            let e = e?;
+            let e =
+                e.with_context(|| format!("failed to scan upload directory: {}", root.display()))?;
             if e.file_type().is_file() {
                 out.push(e.path().to_string_lossy().to_string());
             }
         }
     } else {
-        for e in fs::read_dir(root)? {
+        for e in fs::read_dir(root)
+            .with_context(|| format!("failed to scan upload directory: {}", root.display()))?
+        {
             let e = e?;
             let p = e.path();
             if p.is_file() {

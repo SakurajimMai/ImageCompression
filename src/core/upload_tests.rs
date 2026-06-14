@@ -70,7 +70,7 @@ fn ftp_uploader_retains_effective_proxy() {
 
     let uploader = FtpUploader::new(cfg.ftp, cfg.proxy.effective_url());
 
-    assert_eq!(uploader.proxy_url(), Some("socks5://127.0.0.1:7890/"));
+    assert_eq!(uploader.proxy_url(), Some("socks5://127.0.0.1:7890"));
 }
 
 #[test]
