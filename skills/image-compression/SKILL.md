@@ -153,7 +153,7 @@ $ICLI = "C:/Users/sakurajiamai/Desktop/code/ImageCompression/build/bin/ImageComp
      ```
    - 使用 `jq` 过滤： ` | jq 'select(.event=="done") | .savedPercent' `
 
-2. **不要自己写 `if (avifenc exists)` 检测**。直接用 `--avifenc <dir>` 或让二进制从 PATH 找（推荐在 skill 中硬编码常见路径）。
+2. **不要自己写 `if (avifenc exists)` 检测**。直接用 `--avifenc <dir>` 或让二进制从 PATH 找。GitHub Windows Release 包内会附带官方 libavif 的 `windows-artifacts/avifenc.exe`；源码 checkout 不提交这些 exe，本地开发需要时从 AOMediaCodec/libavif release 解压。
 
 3. **退出码严格处理**：
    - 0 = 全部成功
@@ -176,7 +176,7 @@ $ICLI = "C:/Users/sakurajiamai/Desktop/code/ImageCompression/build/bin/ImageComp
 |---|---|
 | 可执行二进制 | `C:\Users\sakurajiamai\Desktop\code\ImageCompression\build\bin\ImageCompression.exe` |
 | 配置文件 | `C:\Users\sakurajiamai\.imagecompression\config.json` |
-| avifenc 工具目录 | 默认 `build/bin/windows-artifacts/avifenc.exe`，可在配置 `avifenc_path` 改 |
+| avifenc 工具目录 | Windows release 包内为 `windows-artifacts/avifenc.exe`；源码开发可从 AOMediaCodec/libavif release 解压到 `build/bin/windows-artifacts/`，并在配置 `avifenc_path` 指向该目录 |
 | 工作目录 | 任意；CLI 参数都是绝对路径 |
 
 ## 验证清单（调完一次后跑一遍）

@@ -40,7 +40,7 @@ See BUILD_RUST.md for detailed Chinese build & verification guide.
 | Dependency | Purpose |
 | --- | --- |
 | Rust (stable) | Build TUI & CLI |
-| avifenc | Required for AVIF (in PATH or via --avifenc) |
+| avifenc | Required for AVIF (in PATH or via --avifenc directory) |
 | cwebp | Required for WebP (in PATH) |
 
 ## Build
@@ -51,6 +51,8 @@ cargo build --release
 ```
 
 **Automated releases**: Pushing a tag (e.g. `git tag v0.2.0 && git push --tags`) triggers GitHub Actions to build and publish pre-built binaries for Windows (x86_64 + aarch64), Linux (x86_64 + aarch64), macOS (Intel + Apple Silicon), plus `sha256sums.txt`.
+
+Windows release archives download `windows-artifacts.zip` from the official [AOMediaCodec/libavif](https://github.com/AOMediaCodec/libavif/releases) release and bundle `avifenc.exe`, `avifdec.exe`, `avifgainmaputil.exe`, and `libavif-version.txt`. These binaries are not committed to the source repository. To update the bundled AVIF tools, update `LIBAVIF_VERSION` in `.github/workflows/release.yml`.
 
 The release profile uses LTO, stripping, and size optimizations.
 
@@ -87,10 +89,6 @@ build/bin/ImageCompression.exe
 │   ├── config.rs
 │   ├── theme.rs
 │   └── tui/
-├── build/bin/windows-artifacts/
-│   ├── avifenc.exe
-│   ├── avifdec.exe
-│   └── avifgainmaputil.exe
 ├── skills/image-compression/
 │   └── SKILL.md
 └── .github/workflows/

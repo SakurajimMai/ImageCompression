@@ -41,7 +41,7 @@ Copy-Item target/release/ImageCompression.exe build/bin/ImageCompression.exe -Fo
 | 依赖 | 说明 |
 | --- | --- |
 | Rust (最新 stable) | 构建 TUI/CLI |
-| avifenc | AVIF 压缩需要（PATH 或 --avifenc 指定） |
+| avifenc | AVIF 压缩需要（PATH 或 --avifenc 指定目录） |
 | cwebp | WebP 压缩需要（PATH） |
 
 ## 构建 & 发布
@@ -52,7 +52,9 @@ cargo build --release
 # Windows 产物为 ImageCompression.exe
 ```
 
-**自动发布**：推送到 GitHub Releases（通过 GitHub Actions）会自动构建并发布多平台预构建二进制（Windows x86_64 / ARM64、Linux x86_64 / aarch64、macOS Intel / Apple Silicon），并附带 `sha256sums.txt`。
+**自动发布**：推送 `v*` tag 到 GitHub Releases（通过 GitHub Actions）会自动构建并发布多平台预构建二进制（Windows x86_64 / ARM64、Linux x86_64 / aarch64、macOS Intel / Apple Silicon），并附带 `sha256sums.txt`。
+
+Windows release 包会从 [AOMediaCodec/libavif](https://github.com/AOMediaCodec/libavif/releases) 官方 Release 下载 `windows-artifacts.zip`，随包附带 `avifenc.exe`、`avifdec.exe`、`avifgainmaputil.exe` 和 `libavif-version.txt`。这些二进制不提交到源码仓库；升级 AVIF 工具时只需要更新 `.github/workflows/release.yml` 中的 `LIBAVIF_VERSION`。
 
 Release profile 已优化（lto, strip, opt-level=s）。
 
@@ -91,10 +93,6 @@ build/bin/ImageCompression.exe
 │   ├── config.rs          # 配置加载、保存和兼容
 │   ├── theme.rs           # TUI 主题
 │   └── tui/               # ratatui 界面
-├── build/bin/windows-artifacts/
-│   ├── avifenc.exe        # Windows AVIF 编码器
-│   ├── avifdec.exe
-│   └── avifgainmaputil.exe
 ├── skills/image-compression/
 │   └── SKILL.md           # agent 调用说明
 └── .github/workflows/

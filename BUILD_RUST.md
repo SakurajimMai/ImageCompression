@@ -18,7 +18,7 @@ cargo test --all
 cargo build --release
 ```
 
-发布二进制默认启用 SFTP 支持。`avifenc.exe` 可放在 `build/bin/windows-artifacts/`，设置里只需要配置该目录路径，程序会自动解析目录下的 `avifenc.exe`。
+发布二进制默认启用 SFTP 支持。Windows release 包会从 AOMediaCodec/libavif 官方 Release 下载 `windows-artifacts.zip` 并附带 `avifenc.exe`。源码仓库不提交这些二进制。若本地开发需要 AVIF，可把官方 `windows-artifacts.zip` 解压到 `build/bin/windows-artifacts/`，设置里只需要配置该目录路径，程序会自动解析目录下的 `avifenc.exe`。
 
 ## CLI 验证
 
@@ -57,7 +57,7 @@ $ICLI = ".\target\release\ImageCompression.exe"
 仓库包含两个工作流：
 
 - `.github/workflows/ci.yml`：push 和 PR 时运行 `cargo check --all-targets`、`cargo test --all` 和跨平台 release 构建。
-- `.github/workflows/release.yml`：推送 `v*` tag 或手动触发时构建 Windows、Linux、macOS 发布包。
+- `.github/workflows/release.yml`：推送 `v*` tag 或手动触发时构建 Windows、Linux、macOS 发布包；Windows 包会下载 `.github/workflows/release.yml` 中 `LIBAVIF_VERSION` 指定的官方 libavif 工具，并在 release notes 里写入来源和 changelog 链接。
 
 Release 页面会生成平台压缩包和 `sha256sums.txt`。普通用户优先下载 release 产物，无需本地 Rust 环境。
 

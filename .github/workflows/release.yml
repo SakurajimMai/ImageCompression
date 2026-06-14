@@ -9,6 +9,9 @@ on:
 permissions:
   contents: write
 
+env:
+  LIBAVIF_VERSION: v1.4.1
+
 jobs:
   build:
     strategy:
@@ -21,12 +24,14 @@ jobs:
             archive: zip
             binary_name: ImageCompression.exe
             asset_name: imagecompression-x86_64-windows.zip
+            include_libavif: true
           # Windows ARM64
           - os: windows-latest
             target: aarch64-pc-windows-msvc
             archive: zip
             binary_name: ImageCompression.exe
             asset_name: imagecompression-aarch64-windows.zip
+            include_libavif: true
           # Linux x86_64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
@@ -114,6 +119,24 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item $binPath "dist/${{ matrix.binary_name }}"
 
+      - name: Download libavif tools (Windows)
+        if: matrix.include_libavif
+        shell: pwsh
+        run: |
+          $url = "https://github.com/AOMediaCodec/libavif/releases/download/${env:LIBAVIF_VERSION}/windows-artifacts.zip"
+          New-Item -ItemType Directory -Force -Path dist/windows-artifacts | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile windows-artifacts.zip
+          Expand-Archive -Path windows-artifacts.zip -DestinationPath libavif -Force
+          $required = @("avifenc.exe", "avifdec.exe", "avifgainmaputil.exe")
+          foreach ($name in $required) {
+            $match = Get-ChildItem -Path libavif -Recurse -Filter $name | Select-Object -First 1
+            if (-not $match) {
+              throw "libavif artifact missing $name"
+            }
+            Copy-Item $match.FullName "dist/windows-artifacts/$name" -Force
+          }
+          "${env:LIBAVIF_VERSION}" | Set-Content -Path dist/windows-artifacts/libavif-version.txt -NoNewline
+
       - name: Create archive (tar.gz)
         if: matrix.archive == 'tar.gz'
         run: |
@@ -126,7 +149,7 @@ jobs:
         shell: pwsh
         run: |
           cd dist
-          7z a ../${{ matrix.asset_name }} ${{ matrix.binary_name }}
+          7z a ../${{ matrix.asset_name }} *
           cd ..
 
       - name: Upload artifact
@@ -152,6 +175,24 @@ jobs:
           cd ..
           mv sha256sums.txt artifacts/
 
+      - name: Generate release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "## Bundled tools"
+            echo
+            echo "Windows archives include official libavif command-line tools from AOMediaCodec/libavif ${LIBAVIF_VERSION}."
+            echo
+            echo "- Source: https://github.com/AOMediaCodec/libavif/releases/tag/${LIBAVIF_VERSION}"
+            echo "- Changelog: https://github.com/AOMediaCodec/libavif/releases/tag/${LIBAVIF_VERSION}"
+            echo "- Included files: avifenc.exe, avifdec.exe, avifgainmaputil.exe"
+            echo
+            echo "## libavif ${LIBAVIF_VERSION} changelog"
+            echo
+            gh release view "${LIBAVIF_VERSION}" --repo AOMediaCodec/libavif --json body --jq .body
+          } > release-notes.md
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -159,6 +200,7 @@ jobs:
           name: Release ${{ github.ref_name }}
           draft: false
           prerelease: false
+          body_path: release-notes.md
           files: |
             artifacts/*
           generate_release_notes: true

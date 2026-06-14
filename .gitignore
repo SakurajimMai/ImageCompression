@@ -3,7 +3,8 @@
 **/*.rs.bk
 # Keep Cargo.lock committed for reproducible application releases.
 
-# Build artifacts (we keep some like windows-artifacts for avifenc)
+# Build artifacts
+build/bin/windows-artifacts/
 build/bin/ImageCompression.exe
 build/bin/ImageCompression
 dist/
