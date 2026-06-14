@@ -1,6 +1,6 @@
 [package]
 name = "imagecompression"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 authors = ["ImageCompression Contributors"]
 description = "Image preparation, compression (AVIF/WebP/JPEG) and upload (S3/FTP/SFTP) — TUI + CLI in pure Rust. pikpaktui-inspired."
