@@ -814,3 +814,12 @@ rm ~/.imagecompression/config.json
 - 完整命令行(去掉敏感信息)。
 - 完整的错误输出。
 - `imagecompression --version` 的输出。
+
+---
+
+## 另见
+
+- 想了解本工具内部模块如何协作 —— **[ARCHITECTURE.md](./ARCHITECTURE.md)**
+- 完整 CLI 参考与 JSON 事件协议 —— **[API.md](./API.md)**
+- 从源码构建 —— **[DEVELOPMENT.md](./DEVELOPMENT.md)**
+- 概览与文档地图 —— **[README.md](./README.md)**

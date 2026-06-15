@@ -104,7 +104,8 @@ src/
 - `--json` 把子命令切换为结构化事件输出。
 - 输出到 stdout,错误通过 `anyhow` 链打到 stderr。
 - 当任何文件失败时返回退出码 `1`(`src/cmd/compress.rs:196`、
-  `src/cmd/upload.rs:94`、`src/cmd/all.rs:120`)。
+  `src/cmd/upload.rs:94`,以及 `src/cmd/all.rs:120` 压缩失败、
+  `:150` 上传失败)。
 
 颜色码 `G`(green)、`D`(dim)、`B`(bold)、`R`(reset)
 (`src/cmd/mod.rs:9`)在所有子命令中复用,以保持非 JSON 输出的可读性。
@@ -147,9 +148,9 @@ src/
 - `BatchOptions`(`src/core/compress.rs:39`)—— 批处理的参数集合
   (input dir、output dir、format、recursive、overwrite、conflict strategy、
   encoder 路径、worker 数、params)。
-- `BatchResult` / `CompressResult`(`src/core/compress.rs:62`,`:80`)——
+- `BatchResult` / `CompressResult`(`src/core/compress.rs:81`,`:63`)——
   批处理返回的结果。
-- `ProgressEvent`(`src/core/compress.rs:102`)—— 统一的进度事件;CLI 的
+- `ProgressEvent`(`src/core/compress.rs:103`)—— 统一的进度事件;CLI 的
   `--json` 与 TUI 使用同一形状。
 - `compress_directory(ctx, opts, runner, progress)`
   (`src/core/compress.rs:532`)—— 调度入口:
@@ -324,7 +325,7 @@ sequenceDiagram
 
 ## 扩展点
 
-- **新增图片格式** —— 在 `compress_one`(`src/core/compress.rs:487`)中
+- **新增图片格式** —— 在 `compress_one`(`src/core/compress.rs:488`)中
   加分支,并在 `build_avif_command` / `build_webp_command` 旁边加一个
   `build_<fmt>_command` 辅助函数。
 - **新增上传协议** —— 实现 `Uploader` trait(`src/core/upload.rs:54`),

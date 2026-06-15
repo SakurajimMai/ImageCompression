@@ -66,13 +66,14 @@ Copy-Item target/release/ImageCompression.exe build/bin/ImageCompression.exe -Fo
 
 ## 下一步读什么?
 
-| 想了解…… | 阅读 |
+| 你是…… | 推荐阅读 |
 | --- | --- |
-| 系统整体架构 | **[ARCHITECTURE.md](./ARCHITECTURE.md)** |
-| 配置开发环境、运行测试、新增功能 | **[DEVELOPMENT.md](./DEVELOPMENT.md)** |
-| 使用 CLI 或 JSON 事件协议 | **[API.md](./API.md)** |
-| 构建发布包、运行 CI/CD | **[DEPLOYMENT.md](./DEPLOYMENT.md)** |
-| 提交代码、遵循项目规范 | **[CONTRIBUTING.md](./CONTRIBUTING.md)** |
+| 最终使用者(摄影爱好者、归档人员) | **[USER_GUIDE.md](./USER_GUIDE.md)** — 安装、配置、TUI/CLI 使用、典型场景、FAQ |
+| 想了解系统整体架构 | **[ARCHITECTURE.md](./ARCHITECTURE.md)** |
+| 开发者,要配置环境、跑测试、新增功能 | **[DEVELOPMENT.md](./DEVELOPMENT.md)** |
+| 想用 CLI 或 JSON 事件协议 | **[API.md](./API.md)** |
+| 要构建发布包、运行 CI/CD | **[DEPLOYMENT.md](./DEPLOYMENT.md)** |
+| 要贡献代码、遵循项目规范 | **[CONTRIBUTING.md](./CONTRIBUTING.md)** |
 
 ## 项目结构
 
