@@ -16,6 +16,9 @@ pub fn run(args: &[String]) -> Result<()> {
     let mut workers = 1i32;
     let mut avifenc = String::new();
     let mut json = false;
+    let mut resize_mode = "none".to_string();
+    let mut resize_value = 0i32;
+    let mut keep_aspect_ratio = true;
 
     let mut i = 0;
     while i < args.len() {
@@ -68,6 +71,20 @@ pub fn run(args: &[String]) -> Result<()> {
                     avifenc = args[i].clone();
                 }
             }
+            "--resize-mode" => {
+                i += 1;
+                if i < args.len() {
+                    resize_mode = args[i].clone();
+                }
+            }
+            "--resize-value" => {
+                i += 1;
+                if i < args.len() {
+                    resize_value = args[i].parse().unwrap_or(0);
+                }
+            }
+            "--keep-aspect-ratio" => keep_aspect_ratio = true,
+            "--no-keep-aspect-ratio" => keep_aspect_ratio = false,
             "--recursive" => recursive = true,
             "--no-recursive" => recursive = false,
             "--overwrite" => overwrite = true,
@@ -105,9 +122,9 @@ pub fn run(args: &[String]) -> Result<()> {
             quality,
             speed,
             lossless: false,
-            resize_mode: "none".to_string(),
-            resize_value: 0,
-            keep_aspect_ratio: true,
+            resize_mode,
+            resize_value,
+            keep_aspect_ratio,
             strip_exif: true,
             keep_icc: false,
             strip_xmp: true,

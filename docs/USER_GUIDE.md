@@ -529,7 +529,14 @@ video001.mp4   (原图 IMG_0042.MOV)
 
 ### 场景 3:缩放后再压缩(节省更多空间)
 
-编辑 `~/.imagecompression/config.json`:
+CLI 直接传参:
+
+```powershell
+ImageCompression compress --input .\prepared --output .\compressed `
+  --format avif --resize-mode long_edge --resize-value 1920
+```
+
+也可以编辑 `~/.imagecompression/config.json`,供 TUI 或默认配置使用:
 
 ```json
 {
@@ -542,7 +549,7 @@ video001.mp4   (原图 IMG_0042.MOV)
 }
 ```
 
-之后 `compress` 会把所有图片缩放到最长边 1920px 再压 AVIF。
+之后会把所有图片缩放到最长边 1920px 再压 AVIF。
 
 ### 场景 4:上传到 S3
 

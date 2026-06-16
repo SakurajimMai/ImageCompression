@@ -14,6 +14,9 @@ pub fn run(args: &[String]) -> Result<()> {
     let mut do_upload = false;
     let mut cfg_path = String::new();
     let mut json = false;
+    let mut resize_mode = "none".to_string();
+    let mut resize_value = 0i32;
+    let mut keep_aspect_ratio = true;
 
     let mut i = 0;
     while i < args.len() {
@@ -43,6 +46,21 @@ pub fn run(args: &[String]) -> Result<()> {
                     .parse()
                     .unwrap_or(35);
             }
+            "--resize-mode" => {
+                i += 1;
+                resize_mode = args.get(i).cloned().unwrap_or_else(|| "none".to_string());
+            }
+            "--resize-value" => {
+                i += 1;
+                resize_value = args
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_default()
+                    .parse()
+                    .unwrap_or(0);
+            }
+            "--keep-aspect-ratio" => keep_aspect_ratio = true,
+            "--no-keep-aspect-ratio" => keep_aspect_ratio = false,
             "--upload" => do_upload = true,
             "--config" => {
                 i += 1;
@@ -103,6 +121,9 @@ pub fn run(args: &[String]) -> Result<()> {
         params: compress::Params {
             quality,
             speed: 6,
+            resize_mode,
+            resize_value,
+            keep_aspect_ratio,
             ..Default::default()
         },
     };

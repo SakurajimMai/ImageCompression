@@ -48,9 +48,20 @@ pub fn command_help_text(cmd: &str) -> (&'static str, &'static str, String) {
                 G = G, D = D, B = B, R = R
             ),
         ),
-        "compress" => ("compress --input <dir> [--format avif|webp|jpeg] [--quality N] ...", "Batch compress images", format!("See full docs. Uses avifenc/cwebp + pure jpeg.\n")),
+        "compress" => (
+            "compress --input <dir> [--format avif|webp|jpeg] [--quality N] [--resize-mode MODE --resize-value N] ...",
+            "Batch compress images",
+            format!(
+                "{B}OPTIONS:{R}\n  {G}--input DIR{R}                {D}Source directory (required){R}\n  {G}--output DIR{R}               {D}Target directory (defaults <input>_compressed){R}\n  {G}--format avif|webp|jpeg{R}    {D}Output format{R}\n  {G}--quality N{R}                {D}JPEG/WebP quality or AVIF max quality{R}\n  {G}--resize-mode MODE{R}         {D}none,width,height,percent,long_edge,short_edge,fit,fill,exact{R}\n  {G}--resize-value N{R}           {D}Pixel value or percent, depending on mode{R}\n  {G}--no-keep-aspect-ratio{R}     {D}Only affects width/height modes{R}\n\n{B}EXAMPLES:{R}\n  imagecompression compress --input ./photos --format avif --resize-mode long_edge --resize-value 1920\n",
+                G = G, D = D, B = B, R = R
+            ),
+        ),
         "upload" => ("upload --input <dir> [--config <path>]", "Upload to S3/FTP/SFTP", "Reads ~/.imagecompression/config.json\n".to_string()),
-        "all" => ("all --input <dir> [--upload]", "prepare → compress → (upload)", "One-shot workflow.\n".to_string()),
+        "all" => (
+            "all --input <dir> [--upload] [--resize-mode MODE --resize-value N]",
+            "prepare → compress → (upload)",
+            "One-shot workflow. Resize options are forwarded to the compress stage.\n".to_string(),
+        ),
         _ => ("<command>", "Unknown", "Run imagecompression --help\n".to_string()),
     }
 }

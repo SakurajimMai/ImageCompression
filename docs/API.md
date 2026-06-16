@@ -30,9 +30,9 @@ ImageCompression <command> --help      # 命令级帮助
 | --- | --- | --- |
 | `scan` | 遍历目录,统计图片 / 视频 / 其他数量。 | `--input`、`--recursive`、`--no-recursive`、`--json` |
 | `prepare` | 重命名并复制文件到组织好的输出树。 | `--input`、`--output`、`--no-rename`、`--overwrite`、`--recursive`、`--json` |
-| `compress` | 把所有图片压缩为 AVIF / WebP / JPEG。 | `--input`、`--output`、`--format`、`--quality`、`--min-quality`、`--speed`、`--workers`、`--avifenc`、`--overwrite`、`--json` |
+| `compress` | 把所有图片压缩为 AVIF / WebP / JPEG。 | `--input`、`--output`、`--format`、`--quality`、`--min-quality`、`--speed`、`--resize-mode`、`--resize-value`、`--workers`、`--avifenc`、`--overwrite`、`--json` |
 | `upload` | 把目录中的文件上传到 S3 / FTP / SFTP。 | `--input`、`--config`、`--recursive`、`--json` |
-| `all` | 一条龙:scan → prepare → compress →(可选)upload。 | `--input`、`--prepared-output`、`--compressed-output`、`--format`、`--quality`、`--upload`、`--config`、`--json` |
+| `all` | 一条龙:scan → prepare → compress →(可选)upload。 | `--input`、`--prepared-output`、`--compressed-output`、`--format`、`--quality`、`--resize-mode`、`--resize-value`、`--upload`、`--config`、`--json` |
 
 退出码:
 
@@ -97,6 +97,7 @@ ImageCompression prepare --input ./raw --output ./prepared [--no-rename] [--over
 ```bash
 ImageCompression compress --input ./prepared --output ./out \
     --format avif --quality 35 --speed 6 --min-quality 20 \
+    [--resize-mode long_edge --resize-value 1920] \
     [--workers N] [--avifenc /opt/libavif/bin] [--overwrite] [--json]
 ```
 
@@ -111,8 +112,9 @@ ImageCompression compress --input ./prepared --output ./out \
 - `--speed` 映射到 `avifenc --speed`(0–10,数值越小越慢、越小)。
 - AVIF 时 `--workers` 被忽略(内部强制为 1,因为 `avifenc` 自身已并行);
   WebP/JPEG 接受该参数。
-- 缩放模式从配置读取,而不是从 CLI。编辑 `~/.imagecompression/config.json`
-  (或 TUI 设置 overlay)以启用。
+- 缩放可以直接用 CLI 参数启用:
+  `--resize-mode <mode> --resize-value <n>`。`width` / `height` 默认保持
+  长宽比,可用 `--no-keep-aspect-ratio` 关闭。
 - 冲突策略:
   - `--overwrite` → 覆盖已有输出。
   - 默认 → 重命名为 `0001_1.jpg`、`0001_2.jpg` …。
@@ -129,8 +131,9 @@ JSON 事件:
 
 ### 缩放模式
 
-在 `config.json` 的 `compress.resize_mode` + `compress.resize_value` 中
-配置。模式逻辑在 `resize_image`(`src/core/compress.rs:242`)中实现:
+可以通过 CLI 的 `--resize-mode` + `--resize-value` 传入,也可以在
+`config.json` 的 `compress.resize_mode` + `compress.resize_value` 中配置
+供 TUI 使用。模式逻辑在 `resize_image`(`src/core/compress.rs:242`)中实现:
 
 | 模式 | 行为 |
 | --- | --- |
@@ -179,7 +182,9 @@ JSON 事件:
 ### `all`
 
 ```bash
-ImageCompression all --input ./raw --format avif --quality 35 [--upload] [--config ...] [--json]
+ImageCompression all --input ./raw --format avif --quality 35 \
+    [--resize-mode long_edge --resize-value 1920] \
+    [--upload] [--config ...] [--json]
 ```
 
 一条龙工作流:
@@ -190,6 +195,8 @@ ImageCompression all --input ./raw --format avif --quality 35 [--upload] [--conf
 3. `compress::compress_directory` → `<prepared>_compressed`(或
    `--compressed-output`)。
 4. 若 `--upload`,使用配置执行 `upload::upload_directory`。
+
+`all` 的缩放参数会原样转发给压缩阶段。
 
 省略 `--upload` 时,无失败返回 `0`,压缩有失败返回 `1`。带 `--upload` 时,
 任一阶段失败均返回 `1`。
