@@ -1,203 +1,160 @@
 ---
 name: image-compression
-description: 用来调用本地 ImageCompression 工具（纯 Rust TUI + CLI，pikpaktui 风格重构）。当用户要求批量压缩图片、整理文件目录、上传到 S3/FTP/SFTP，或希望脚本化（非交互）运行这个工具时，使用本 skill。优先使用 CLI 模式给 agent。
+description: 当 agent 需要非交互式运行 ImageCompression CLI 来扫描、整理、压缩、缩放或上传图片目录时使用；尤其适用于需要 JSON Lines 输出、批处理和避免混入本地测试产物的场景。
 ---
 
-# image-compression
+# ImageCompression
 
-`ImageCompression` 是仓库 `C:\Users\sakurajiamai\Desktop\code\ImageCompression` 下的**纯 Rust** TUI + CLI 工具（完全参考 pikpaktui 的样式、布局、代码组织与 agent 友好设计）。
+## 核心原则
 
-构建后二进制位于：
-- `build/bin/ImageCompression.exe`（推荐位置，agent/skill 默认使用此路径）
-- 或直接使用 `cargo build --release` 产生的 `target/release/ImageCompression.exe`（需手动更新 skill 中的 ICLI 路径）
+`ImageCompression` 是 Rust TUI + CLI 图片批处理工具。agent 运行任务时只使用 CLI，不启动 TUI。
 
-**二进制同时支持两种模式**：
-- 不带任何参数 → 启动 ratatui TUI（Miller 三列布局 + 键盘导航，适合人类交互）
-- 带子命令参数 → 进入 CLI，直接跑批处理并退出（**agent 强烈推荐使用此模式**）
+- 始终把 `--json` 放在子命令前，按 JSON Lines 解析 `start`、`progress`、`error`、`done` 事件。
+- 输入和输出路径使用绝对路径；路径可包含中文、空格和方括号。
+- 不硬编码开发者机器路径。优先读取 `$env:IMAGECOMPRESSION_BIN`，否则使用 `ImageCompression` 或 `ImageCompression.exe` 从 `PATH` 查找。
+- 不把用户的本地目录名、测试相册名、临时输出目录写进 skill、文档、提交说明或发布说明；示例统一使用占位路径。
 
-**优先用 CLI 而不是 TUI。** TUI 适合人类操作，agent 跑批量任务时**必须**走 CLI，并加上 `--json` 把进度变成结构化事件流，便于解析。
-
-## 专为 AI Agent 设计（OpenClaw、Hermes 等）
-
-此 skill 专门为智能体（如 OpenClaw、Hermes）优化：
-- 所有操作通过 CLI 子命令，非交互式。
-- 始终使用 `--json` 输出结构化 JSON Lines，便于程序解析。
-- 清晰退出码：0=完全成功，1=部分失败（可重试），2=参数/用法错误。
-- 支持 dry-run 风格（通过 --json 观察计划）。
-- 推荐 agent 在调用前确保 config.json 已由人类配置好凭据。
-- 输入输出路径必须使用绝对路径，避免相对路径问题。
-- 中文路径、空格、特殊字符均已测试支持。
-
-**Agent 调用模板**（推荐在 skill 中定义 ICLI）：
-```bash
-ICLI="C:/Users/sakurajiamai/Desktop/code/ImageCompression/build/bin/ImageCompression.exe"
-"$ICLI" --json <subcommand> [args...]
-```
-
-解析输出时使用 `jq` 或逐行 `json.loads` 处理事件流。
-
-## 调用方法
+PowerShell 调用模板：
 
 ```powershell
-# 推荐设置变量
-$ICLI = "C:/Users/sakurajiamai/Desktop/code/ImageCompression/build/bin/ImageCompression.exe"
+$ICLI = $env:IMAGECOMPRESSION_BIN
+if (-not $ICLI) { $ICLI = "ImageCompression" }
 
-# 或者直接使用 cargo 产物
-# $ICLI = "C:/Users/sakurajiamai/Desktop/code/ImageCompression/target/release/ImageCompression.exe"
-
-# 看帮助
-& $ICLI --help
-& $ICLI <子命令> --help
-
-# 看版本
-& $ICLI version
+& $ICLI --json scan --input "D:\photos\raw"
 ```
 
-## 子命令一览
+## 写入边界
 
-| 子命令 | 用途 | 关键参数 |
+agent 只能写入用户明确指定的业务输出目录，例如 `--output`、`--prepared-output`、`--compressed-output` 对应的位置。没有明确要求时，不要写入仓库根目录、源码目录或用户原始输入目录。
+
+严禁创建、写入、暂存、提交或上传这些本地/测试产物：
+
+- `.claude/`、`.local/`、`local/`
+- `build/`、`target/`
+- `tmp/`、`temp/`、`.tmp/`
+- `*_compressed/`、`test-output/`、`fixtures-output/`
+- 本地样例图片目录、本地测试相册目录
+- `.zip`、`.7z`、`.rar` 等本地压缩包
+- 运行日志、临时配置、凭据文件
+
+测试规则：
+
+- 运行工具验证时，优先使用系统临时目录或明确的外部测试目录，验证后清理。
+- 不要为了演示 skill 而新增或提交测试输入图片、测试输出目录、压缩结果目录。
+- 只有在用户明确要求修改源码并需要回归保护时，才可以新增仓库内测试源码；测试源码要小而可复现，不能依赖本地图片包或私有目录。
+- 提交前必须运行 `git status --short --ignored`，只暂存本次需要的源码、文档或 skill 文件。
+
+上传规则：
+
+- `upload` 只上传用户传给 `--input` 的目标目录。
+- 不要把仓库根目录、`build/`、`target/`、`local/`、测试目录或压缩包当作上传输入。
+- 上传路径由配置控制；如果配置没有自定义上传子路径，保持工具默认行为，不在 skill 中写死本地目录名。
+
+## 子命令
+
+| 子命令 | 用途 | 常用参数 |
 |---|---|---|
-| `scan` | 扫描目录统计图片 / 视频 / 其他 | `--input`, `--recursive` |
-| `prepare` | 重命名 + 整理文件到目标目录 | `--input`, `--output`, `--no-rename`, `--overwrite`, `--recursive` |
-| `compress` | 批量压缩为 AVIF / WebP / JPEG | `--input`, `--output`, `--format`, `--quality`, `--min-quality`, `--speed`, `--workers`, `--avifenc`, `--overwrite`, `--recursive` |
-| `upload` | 把目录里文件上传到 S3 / FTP / SFTP | `--input`, `--config`, `--recursive` |
-| `all` | 准备 → 压缩 →(可选)上传 一条龙 | `--input`, `--prepared-output`, `--compressed-output`, `--format`, `--quality`, `--upload`, `--config` |
-| `version` | 打印版本 | — |
-| `help` | 打印总帮助 | — |
+| `scan` | 扫描目录并统计文件 | `--input`, `--recursive` |
+| `prepare` | 整理、复制、重命名文件 | `--input`, `--output`, `--no-rename`, `--overwrite`, `--recursive` |
+| `compress` | 压缩为 AVIF / WebP / JPEG | `--input`, `--output`, `--format`, `--quality`, `--min-quality`, `--speed`, `--workers`, `--avifenc`, `--overwrite`, `--recursive` |
+| `upload` | 上传目录到 S3 / FTP / SFTP | `--input`, `--config`, `--recursive` |
+| `all` | prepare -> compress -> 可选 upload | `--input`, `--prepared-output`, `--compressed-output`, `--format`, `--quality`, `--upload`, `--config` |
+| `version` | 输出版本 | 无 |
 
-## 注意事项
+`--json` 是全局参数，放在子命令前：
 
-- `upload` 读取 `~/.imagecompression/config.json`（可以用 `--config` 覆盖），不传任何协议参数。
-- `compress` 走本地 `avifenc` 编码 AVIF，需要确保二进制在 `PATH` 或 `--avifenc <dir>` 指定；
-  JPEG 用 Rust `image` crate 实现，WebP 走系统 `cwebp`。
-- 中文路径、空格、方括号目录名都能正常处理（测试已覆盖）。
-- TUI 支持 pikpaktui 式 Tab 补全、本地文件 Miller 预览（ratatui-image 或回退块/ASCII）。**agent 请始终使用 CLI + --json**。
+```powershell
+& $ICLI --json compress --input "D:\photos\prepared" --output "D:\photos\compressed" --format avif
+```
 
-## JSON 事件流（给 agent 解析）
+## 压缩和缩放
 
-加 `--json` 之后，每一行是一条 JSON，事件类型如下：
+AVIF 依赖 `avifenc`。Windows Release 包会附带官方 libavif 的 `windows-artifacts\avifenc.exe`；源码 checkout 不应该提交这些 exe。本地开发需要时，从 AOMediaCodec/libavif release 解压到被忽略的本地目录，并通过配置或 `--avifenc <dir>` 指向目录。
+
+缩放参数：
+
+- `--resize-mode none|width|height|percent|long_edge|short_edge|fit|fill|exact`
+- `--resize-value N`
+- `--keep-aspect-ratio` 或 `--no-keep-aspect-ratio`
+
+`--no-keep-aspect-ratio` 只影响 `width` 和 `height` 模式。`long_edge`、`short_edge`、`fit` 默认不放大小图；`fill` 会覆盖指定正方形后居中裁剪；`exact` 会强制输出正方形，可能拉伸。
+
+示例：
+
+```powershell
+& $ICLI --json compress `
+  --input "D:\photos\prepared" `
+  --output "D:\photos\compressed" `
+  --format avif `
+  --quality 35 `
+  --resize-mode long_edge `
+  --resize-value 1920
+```
+
+## 标准工作流
+
+先扫描：
+
+```powershell
+& $ICLI --json scan --input "D:\photos\raw" --recursive
+```
+
+整理后压缩：
+
+```powershell
+& $ICLI --json prepare `
+  --input "D:\photos\raw" `
+  --output "D:\photos\prepared" `
+  --recursive
+
+& $ICLI --json compress `
+  --input "D:\photos\prepared" `
+  --output "D:\photos\compressed" `
+  --format avif `
+  --quality 35
+```
+
+一条龙：
+
+```powershell
+& $ICLI --json all `
+  --input "D:\photos\raw" `
+  --prepared-output "D:\photos\prepared" `
+  --compressed-output "D:\photos\compressed" `
+  --format avif `
+  --quality 35
+```
+
+上传：
+
+```powershell
+& $ICLI --json upload --input "D:\photos\compressed"
+```
+
+## JSON 和退出码
+
+JSON Lines 示例：
 
 ```jsonc
 {"event":"start","phase":"compress","total":45}
 {"event":"progress","phase":"compress","current":1,"total":45,"file":"0001.jpg","speed":0.4}
 {"event":"error","phase":"compress","current":2,"total":45,"file":"0002.jpg","error":"..."}
-{"event":"done","phase":"compress","total":45,"compressed":43,"skipped":0,"failed":2,
- "originalSize":1234567,"compressedSize":654321,"savedPercent":47.0,"elapsed":12.3,"outputDir":"..."}
+{"event":"done","phase":"compress","total":45,"compressed":43,"skipped":0,"failed":2,"originalSize":1234567,"compressedSize":654321,"savedPercent":47.0,"elapsed":12.3,"outputDir":"..."}
 ```
 
-非 `--json` 模式则是人类可读的行，例如：
+退出码：
 
-```
-[compress] 开始 共 45 个文件
-[compress] 1/45  0001.jpg  0.4 张/秒
-[upload] 1/45 OK 0001.jpg -> https://cdn.example.com/0001.avif
-```
+- `0`：全部成功。
+- `1`：部分失败，可以针对失败文件或目录重试。
+- `2`：参数或用法错误，不要盲目重试，先修正命令。
 
-**推荐写法：agent 用 `jq` 或 `Select-String` 解析，而不是看 stderr。**
+## 提交前检查
 
-## 标准工作流
-
-### 1. 单纯压缩
+修改 skill、文档或源码后，至少检查：
 
 ```powershell
-& $ICLI --json compress `
-  --input D:/photos/raw `
-  --output D:/photos/compressed `
-  --format avif `
-  --quality 35
+git status --short --ignored
+git diff --check
 ```
 
-### 2. 整理 + 压缩（典型相册）
-
-```powershell
-& $ICLI --json prepare `
-  --input D:/photos/raw `
-  --output D:/photos/prepared
-
-& $ICLI --json compress `
-  --input D:/photos/prepared `
-  --format avif --quality 35 --speed 6
-```
-
-### 3. 一条龙：整理 → 压缩 → 上传
-
-```powershell
-# 先确保 ~/.imagecompression/config.json 已经填好 S3/FTP/SFTP 凭据
-& $ICLI --json all `
-  --input D:/photos/raw `
-  --format avif --quality 35 `
-  --upload
-```
-
-### 4. 把大量图片上传到自定义远程子路径
-
-在 `~/.imagecompression/config.json` 的 `upload.custom_path` 字段填好，例如 `artist/album`，然后：
-
-```powershell
-& $ICLI --json upload --input D:/photos/compressed
-```
-
-`EffectiveConfig` 会把 `custom_path` 拼到协议基础路径上（S3 Prefix / FTP RemoteDir / SFTP RemoteDir）。
-
-## 专为 OpenClaw / Hermes 等智能体优化的调用注意
-
-1. **始终加 `--json`**（放在子命令前）。输出为 JSON Lines，agent 必须逐行解析事件（start/progress/error/done）。
-   - 示例解析（Python）：
-     ```python
-     import json, subprocess
-     proc = subprocess.Popen([ICLI, "--json", "compress", ...], stdout=subprocess.PIPE)
-     for line in proc.stdout:
-         event = json.loads(line)
-         if event["event"] == "done":
-             print(event["savedPercent"])
-     ```
-   - 使用 `jq` 过滤： ` | jq 'select(.event=="done") | .savedPercent' `
-
-2. **不要自己写 `if (avifenc exists)` 检测**。直接用 `--avifenc <dir>` 或让二进制从 PATH 找。GitHub Windows Release 包内会附带官方 libavif 的 `windows-artifacts/avifenc.exe`；源码 checkout 不提交这些 exe，本地开发需要时从 AOMediaCodec/libavif release 解压。
-
-3. **退出码严格处理**：
-   - 0 = 全部成功
-   - 1 = 部分文件失败（可重试该目录，或跳过失败文件）
-   - 2 = 参数错误 / 用法错误（不要重试，检查 prompt）
-
-4. **大目录压缩建议**：avif 强制单线程（内部已处理），其他格式可用 `--workers 4` 加速。
-
-5. **凭据管理**：**永远不要让 agent 修改 `~/.imagecompression/config.json`**。凭据由人类提前在 TUI 或手动配置好。agent 调用前可读取 config 验证（但不写）。
-
-6. **错误处理**：S3 401/403 通常是 key 错误或空格污染，提示人类重新配置。其他网络错误可重试。
-
-7. **路径要求**：input/output 必须绝对路径。Windows 用 `/` 或 `\\` 均可，二进制已处理。
-
-8. **干运行风格**：可先用 `scan` 获取文件数，再决定是否执行 prepare/compress。compress 支持 overwrite/rename 策略。
-
-## 完整路径
-
-| 用途 | 路径 |
-|---|---|
-| 可执行二进制 | `C:\Users\sakurajiamai\Desktop\code\ImageCompression\build\bin\ImageCompression.exe` |
-| 配置文件 | `C:\Users\sakurajiamai\.imagecompression\config.json` |
-| avifenc 工具目录 | Windows release 包内为 `windows-artifacts/avifenc.exe`；源码开发可从 AOMediaCodec/libavif release 解压到 `build/bin/windows-artifacts/`，并在配置 `avifenc_path` 指向该目录 |
-| 工作目录 | 任意；CLI 参数都是绝对路径 |
-
-## 验证清单（调完一次后跑一遍）
-
-- [ ] `ImageCompression version` 返回 `0.2.0`（或当前 Cargo 版本）
-- [ ] `ImageCompression scan --input <dir>` 打印图片/视频数量
-- [ ] `ImageCompression --json prepare --input <dir>` 产生 start/progress/done JSON 事件
-- [ ] `ImageCompression --json compress --input <dir> --format jpeg` 每行一个 JSON，包含 savedPercent/elapsed
-- [ ] `ImageCompression`（无参数）能正常启动 TUI（可选，agent 主要验证 CLI）
-- [ ] 配置文件兼容：`~/.imagecompression/config.json` 可直接加载（proxy legacy、avifenc_path normalize 等行为一致）
-- [ ] 中文目录 + 括号路径正常（prepare 重命名 0001.jpg / video001.mp4 规则一致）
-
-构建命令（在项目根目录执行）：
-```powershell
-cargo build --release
-mkdir -p build/bin
-Copy-Item target/release/ImageCompression.exe build/bin/ImageCompression.exe -Force
-```
-
-**推荐方式**：直接从 GitHub Releases 下载预构建二进制（多平台 .zip / .tar.gz + sha256sums.txt），无需本地编译 Rust。
-
-推送 `git tag vX.Y.Z && git push --tags` 即可触发 GitHub Actions 自动构建并发布所有平台产物（类似 pikpaktui）。
-
-如果以上任何一项失败，先确认 `cargo build --release` 成功，然后把 exe 放到 build/bin 位置。
+确认没有把本地目录、测试输入、测试输出、压缩产物、构建产物或凭据文件纳入提交。只在用户明确要求时才执行 `git add`、`git commit`、`git push`。
